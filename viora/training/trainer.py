@@ -179,10 +179,15 @@ class Trainer:
             grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
         else:
             grad_norm = torch.tensor(0.0)
+        # With the fp16 GradScaler, an overflowed step is SKIPPED: optimizer.step() is a no-op
+        # and update() lowers the scale. Advance the LR schedule only on a real optimizer step,
+        # so the schedule stays aligned and PyTorch doesn't warn about step() ordering.
+        scale_before = self.scaler.get_scale() if self.use_scaler else None
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
-        self.scheduler.step()
+        if scale_before is None or self.scaler.get_scale() >= scale_before:
+            self.scheduler.step()
         return float(grad_norm)
 
     def train(self, train_loader: DataLoader, val_loader: DataLoader | None = None) -> dict:

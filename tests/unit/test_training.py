@@ -152,6 +152,30 @@ def test_trainer_moves_batch_to_device(tmp_path):
     assert seen["called"] is True
 
 
+@pytest.mark.parametrize(
+    ("scale_before", "scale_after", "expect_steps"),
+    [(65536.0, 65536.0, 1),   # no overflow -> optimizer stepped -> schedule advances
+     (65536.0, 32768.0, 0)],  # fp16 overflow -> scaler skipped -> schedule must NOT advance
+)
+def test_scheduler_advances_only_on_real_optimizer_step(
+    tmp_path, monkeypatch, scale_before, scale_after, expect_steps
+):
+    model = VioraForVideoUnderstanding(tiny_viora_config())
+    trainer = Trainer(model, _train_cfg(tmp_path, grad_clip=0.0), device="cpu")
+    trainer.use_scaler = True  # force the fp16 skip-detection path
+
+    scales = iter([scale_before, scale_after])
+    monkeypatch.setattr(trainer.scaler, "get_scale", lambda: next(scales))
+    monkeypatch.setattr(trainer.scaler, "step", lambda opt: None)
+    monkeypatch.setattr(trainer.scaler, "update", lambda: None)
+    seen = {"n": 0}
+    monkeypatch.setattr(trainer.scheduler, "step",
+                        lambda *a, **k: seen.__setitem__("n", seen["n"] + 1))
+
+    trainer._optimizer_step()
+    assert seen["n"] == expect_steps
+
+
 def test_nan_loss_is_flagged_not_hidden(tmp_path):
     model = VioraForVideoUnderstanding(tiny_viora_config())
 
