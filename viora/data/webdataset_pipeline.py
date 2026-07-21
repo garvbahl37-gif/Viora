@@ -71,20 +71,67 @@ def write_video_text_shards(
     return n
 
 
-def decode_video_bytes(
-    data: bytes, num_frames: int, transform: Callable | None = None, fps_hint: float = 4.0
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Decode mp4 bytes -> ``([C,T,H,W] float, timestamps[T])`` uniformly sampled."""
-    import av
-
-    container = av.open(io.BytesIO(data))
-    stream = container.streams.video[0]
-    tb = stream.time_base
+def _decode_all(container, stream, tb, fps_hint: float):
+    """Decode every frame of the stream (correct but O(total_frames))."""
     frames, times = [], []
     for frame in container.decode(stream):
         frames.append(frame.to_ndarray(format="rgb24"))
         times.append(float(frame.pts * tb) if frame.pts is not None else len(times) / fps_hint)
-    container.close()
+    return frames, times
+
+
+def _seek_sample(container, stream, num_frames: int, tb, fps_hint: float):
+    """Seek to ~``num_frames`` positions across the clip, decoding ~num_frames frames.
+
+    Returns ``([], [])`` if seeking is unsupported/incomplete so the caller can fall
+    back to a full decode. Bounds work to a few frames per sample instead of the whole
+    clip — the win for long full-resolution video where decode starves the GPU.
+    """
+    start = stream.start_time or 0
+    duration = stream.duration
+    frames, times = [], []
+    for i in range(num_frames):
+        target = int(start + duration * i / num_frames)
+        try:
+            container.seek(target, stream=stream, backward=True, any_frame=False)
+            picked = None
+            for frame in container.decode(stream):
+                picked = frame
+                if frame.pts is not None and frame.pts >= target:
+                    break
+        except Exception:  # noqa: BLE001 - any seek/decode issue -> fall back to full decode
+            return [], []
+        if picked is None:
+            return [], []
+        frames.append(picked.to_ndarray(format="rgb24"))
+        times.append(float(picked.pts * tb) if picked.pts is not None else i / max(fps_hint, 1e-6))
+    return frames, times
+
+
+def decode_video_bytes(
+    data: bytes, num_frames: int, transform: Callable | None = None, fps_hint: float = 4.0
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Decode mp4 bytes -> ``([C,T,H,W] float, timestamps[T])`` uniformly sampled.
+
+    Long clips are sparse-sampled by seeking (~num_frames decodes); short/awkward
+    clips (or any seek failure) fall back to decoding all frames, then uniform-subsample.
+    """
+    import av
+
+    container = av.open(io.BytesIO(data))
+    try:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"  # multithreaded decode
+        tb = stream.time_base
+        total = int(stream.frames or 0)
+        frames, times = [], []
+        if total > num_frames * 3 and stream.duration:  # long clip -> seek, don't decode all
+            frames, times = _seek_sample(container, stream, num_frames, tb, fps_hint)
+        if len(frames) < num_frames:                     # short clip or seek failed -> full decode
+            container.seek(0)
+            frames, times = _decode_all(container, stream, tb, fps_hint)
+    finally:
+        container.close()
     if not frames:
         raise ValueError("no frames decoded from shard sample")
 

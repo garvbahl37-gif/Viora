@@ -46,6 +46,27 @@ def test_decode_bytes_shape(tmp_path):
     assert ts.shape[0] == 6
 
 
+def test_decode_bytes_long_clip_sparse_path(tmp_path):
+    # long clip -> seek-sample path; must still return exactly num_frames spanning the clip
+    from viora.data.webdataset_pipeline import decode_video_bytes, tensor_to_mp4_bytes
+
+    frames = torch.rand(3, 64, 32, 32)
+    data = tensor_to_mp4_bytes(frames, fps=8.0)
+    video, ts = decode_video_bytes(data, num_frames=8)
+    assert video.shape == (3, 8, 32, 32)
+    assert ts.shape[0] == 8
+
+
+def test_decode_bytes_short_clip_fallback(tmp_path):
+    # fewer frames than requested -> full-decode fallback, capped at available frames
+    from viora.data.webdataset_pipeline import decode_video_bytes, tensor_to_mp4_bytes
+
+    data = tensor_to_mp4_bytes(torch.rand(3, 4, 32, 32), fps=4.0)
+    video, ts = decode_video_bytes(data, num_frames=8)
+    assert video.shape[0] == 3 and video.shape[1] == 4   # only 4 frames exist
+    assert ts.shape[0] == 4
+
+
 def test_decoder_aborts_on_fully_broken_stream():
     """A stream where every sample fails to decode must fail fast, not skip forever."""
     import json
