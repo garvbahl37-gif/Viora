@@ -37,9 +37,11 @@ logger = get_logger(__name__)
 def default_step_fn(model: nn.Module, batch: Any):
     core = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
     if isinstance(batch, VideoTextBatch):
+        # The 3D-ViT downsamples time by tubelet_size (T -> T'); the pretrained frame
+        # encoder keeps one token per frame (stride 1). Match the mask to the tokens.
+        stride = core.cfg.vision.tubelet_size if core.cfg.vision.backbone == "scratch" else 1
         tok_mask = (
-            batch.token_temporal_mask(core.cfg.vision.tubelet_size)
-            if batch.frame_mask is not None else None
+            batch.token_temporal_mask(stride) if batch.frame_mask is not None else None
         )
         return core(
             batch.video, input_ids=batch.input_ids, attention_mask=batch.attention_mask,

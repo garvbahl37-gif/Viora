@@ -98,6 +98,24 @@ def decode_video_bytes(
     return video, ts
 
 
+class _VideoTextDecoder:
+    """Picklable decode step for WebDataset.
+
+    Must be a module-level callable (not a local closure) so ``DataLoader`` with
+    ``num_workers > 0`` can pickle it to send to worker processes.
+    """
+
+    def __init__(self, num_frames: int, transform: Callable | None) -> None:
+        self.num_frames = num_frames
+        self.transform = transform
+
+    def __call__(self, sample: tuple) -> dict:
+        data, meta_bytes = sample
+        meta = json.loads(meta_bytes)
+        video, ts = decode_video_bytes(data, self.num_frames, self.transform)
+        return {"video": video, "timestamps": ts, **meta}
+
+
 def build_video_text_webdataset(
     shards: str | list[str],
     *,
@@ -124,11 +142,4 @@ def build_video_text_webdataset(
     if shuffle:
         ds = ds.shuffle(shuffle)
     ds = ds.to_tuple("mp4", "json")
-
-    def _decode(sample):
-        data, meta_bytes = sample
-        meta = json.loads(meta_bytes)
-        video, ts = decode_video_bytes(data, num_frames, transform)
-        return {"video": video, "timestamps": ts, **meta}
-
-    return ds.map(_decode, handler=wds.warn_and_continue)
+    return ds.map(_VideoTextDecoder(num_frames, transform), handler=wds.warn_and_continue)

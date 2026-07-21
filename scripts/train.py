@@ -30,12 +30,16 @@ from viora.utils.config import TrainingConfig, load_config
 from viora.utils.logging import configure_logging
 
 
-def smoke_tokenize_fn(video_token_id: int, vocab: int):
-    def fn(texts: list[str]) -> dict:
-        rows = []
-        for t in texts:
-            toks = [video_token_id] + [abs(hash(w)) % (vocab - 1) for w in t.split()][:14]
-            rows.append(toks)
+# Tokenizers are classes (not closures) so the collator is picklable for DataLoader
+# workers (num_workers > 0). A local closure raises "Can't get local object" on spawn.
+class smoke_tokenize_fn:
+    def __init__(self, video_token_id: int, vocab: int) -> None:
+        self.video_token_id = video_token_id
+        self.vocab = vocab
+
+    def __call__(self, texts: list[str]) -> dict:
+        rows = [[self.video_token_id] + [abs(hash(w)) % (self.vocab - 1) for w in t.split()][:14]
+                for t in texts]
         length = max(len(r) for r in rows)
         input_ids = torch.zeros(len(rows), length, dtype=torch.long)
         attn = torch.zeros(len(rows), length, dtype=torch.long)
@@ -46,19 +50,20 @@ def smoke_tokenize_fn(video_token_id: int, vocab: int):
         labels[attn == 0] = -100
         return {"input_ids": input_ids, "attention_mask": attn, "labels": labels}
 
-    return fn
 
-
-def hf_tokenize_fn(tokenizer, max_length: int):
+class hf_tokenize_fn:
     """Real-LLM tokenizer for sharded data. Texts already carry the <video> token."""
-    def fn(texts: list[str]) -> dict:
-        enc = tokenizer(texts, padding=True, truncation=True, max_length=max_length,
-                        return_tensors="pt")
+
+    def __init__(self, tokenizer, max_length: int) -> None:
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __call__(self, texts: list[str]) -> dict:
+        enc = self.tokenizer(texts, padding=True, truncation=True, max_length=self.max_length,
+                             return_tensors="pt")
         labels = enc["input_ids"].clone()
         labels[enc["attention_mask"] == 0] = -100  # ignore pads; injection ignores visual tokens
         return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"], "labels": labels}
-
-    return fn
 
 
 def _transform_for(model_cfg):
@@ -76,11 +81,19 @@ def main() -> int:
     ap.add_argument("--smoke", action="store_true", help="tiny synthetic-data smoke run")
     ap.add_argument("--shards", help="WebDataset shard pattern for REAL training, "
                                      "e.g. 'data/shards/train-{000000..000099}.tar'")
+    ap.add_argument("--device", default=None,
+                    help="cpu|cuda|mps|auto (default: auto; cpu for --smoke). Use cpu on Macs "
+                         "where the pretrained-vision path hits MPS conv issues.")
     ap.add_argument("overrides", nargs="*", help="config overrides, e.g. training.max_steps=10")
     args = ap.parse_args()
     configure_logging("INFO")
 
-    model_cfg = load_config(args.model)
+    # Route CLI overrides: "training.*" -> training config (prefix stripped), rest -> model config.
+    # e.g. training.max_steps=3000 training.batch_size=4 llm.name_or_path=Qwen/Qwen2.5-1.5B-Instruct
+    model_overrides = [o for o in args.overrides if not o.startswith("training.")]
+    train_overrides = [o[len("training."):] for o in args.overrides if o.startswith("training.")]
+
+    model_cfg = load_config(args.model, overrides=model_overrides)
     if args.smoke:
         model_cfg.vision.image_size = 32
         model_cfg.vision.num_frames = 8
@@ -97,7 +110,9 @@ def main() -> int:
         model_cfg.llm.vocab_size = 128
         model_cfg.projector.output_dim = 0
 
-    train_cfg: TrainingConfig = load_config(args.train, schema=TrainingConfig)  # type: ignore
+    train_cfg: TrainingConfig = load_config(  # type: ignore
+        args.train, schema=TrainingConfig, overrides=train_overrides
+    )
 
     model = VioraForVideoUnderstanding(model_cfg)
     collator = VideoTextCollator()
@@ -123,7 +138,8 @@ def main() -> int:
                             num_workers=train_cfg.num_workers)
 
     # tiny smoke runs on CPU (fast, and avoids MPS Conv3d gaps); real runs auto-select
-    trainer = Trainer(model, train_cfg, device="cpu" if args.smoke else None, full_config=model_cfg)
+    device = "cpu" if args.smoke else args.device
+    trainer = Trainer(model, train_cfg, device=device, full_config=model_cfg)
     summary = trainer.train(loader)
     print("final metrics:", {k: round(v, 4) for k, v in summary.items()})
     return 0
