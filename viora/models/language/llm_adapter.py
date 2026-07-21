@@ -154,6 +154,15 @@ class LLMAdapter(nn.Module):
                 from peft import LoraConfig, get_peft_model
             except ImportError as e:  # pragma: no cover
                 raise ImportError("train_mode='lora' requires peft; `uv pip install peft`") from e
+            # Kaggle/Colab ship an old torchao (0.10) that makes peft's LoRA dispatch raise
+            # `is_torchao_available()` -> ImportError. We don't use torchao quantization, so
+            # neutralize that check (falls back to standard Linear LoRA).
+            try:
+                import peft.tuners.lora.torchao as _lora_torchao
+
+                _lora_torchao.is_torchao_available = lambda: False
+            except Exception:  # noqa: BLE001 - best-effort shim; ignore if peft internals differ
+                pass
             lc = self.cfg.lora
             self.model = get_peft_model(
                 self.model,
