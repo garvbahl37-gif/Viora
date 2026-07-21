@@ -252,28 +252,28 @@ class Trainer:
     # ------------------------------------------------------------- io
     def save(self, tag: str) -> Path:
         path = self.output_dir / f"{tag}.pt"
+        # Prune BEFORE writing so peak disk stays bounded. Whole-model checkpoints are GBs;
+        # on a capped disk (e.g. Kaggle's 20 GB) writing a new one on top of the old ones
+        # overflows mid-write. Keep the newest (K-1) step_*.pt, then write this one -> K total.
+        # 'final.pt' and any non-'step_' tag never trigger pruning.
+        klc = getattr(self.cfg, "keep_last_checkpoints", 0)
+        if tag.startswith("step_") and klc and klc > 0:
+            self._prune_step_checkpoints(keep=klc - 1)
         save_checkpoint(
             path, self.model, optimizer=self.optimizer, scheduler=self.scheduler,
             scaler=self.scaler, step=self.step, epoch=self.epoch, config=self.full_config,
         )
-        self._prune_checkpoints()
         return path
 
-    def _prune_checkpoints(self) -> None:
-        """Keep only the newest ``keep_last_checkpoints`` ``step_*.pt`` files.
+    def _prune_step_checkpoints(self, keep: int) -> None:
+        """Delete all but the newest ``keep`` ``step_*.pt`` (``final.pt`` is untouched)."""
+        def _step_num(p: Path) -> int:
+            tail = p.stem.split("_", 1)[1]
+            return int(tail) if tail.isdigit() else -1
 
-        Whole-model checkpoints are large (~GBs); on a capped disk (e.g. Kaggle's
-        20 GB) saving every N steps otherwise fills the disk and aborts the run.
-        ``final.pt`` and any non ``step_`` tag are never pruned.
-        """
-        keep = getattr(self.cfg, "keep_last_checkpoints", 0)
-        if not keep or keep < 1:
-            return
-        ckpts = sorted(
-            self.output_dir.glob("step_*.pt"),
-            key=lambda p: int(p.stem.split("_")[1]) if p.stem.split("_")[1].isdigit() else -1,
-        )
-        for old in ckpts[:-keep]:
+        ckpts = sorted(self.output_dir.glob("step_*.pt"), key=_step_num)
+        stale = ckpts if keep <= 0 else ckpts[:-keep]
+        for old in stale:
             try:
                 old.unlink()
             except OSError:  # pragma: no cover - best-effort cleanup

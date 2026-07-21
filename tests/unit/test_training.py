@@ -167,6 +167,22 @@ def test_checkpoint_pruning_keeps_last_k(tmp_path):
     assert (tmp_path / "step_300.pt").exists()
 
 
+def test_checkpoint_pruning_recovers_from_overflow(tmp_path):
+    """A session that already piled up checkpoints (disk full): the next save prunes
+    BEFORE writing, so it frees space and bounds the total to keep_last."""
+    import glob
+
+    model = VioraForVideoUnderstanding(tiny_viora_config())
+    trainer = Trainer(model, _train_cfg(tmp_path, keep_last_checkpoints=3), device="cpu")
+    for s in range(200, 1401, 200):                     # 7 pre-existing checkpoints
+        (tmp_path / f"step_{s}.pt").write_bytes(b"x")
+    trainer.step = 1600
+    trainer.save("step_1600")
+    remaining = sorted(int(p.rsplit("step_", 1)[1].split(".")[0])
+                       for p in glob.glob(str(tmp_path / "step_*.pt")))
+    assert remaining == [1200, 1400, 1600]              # bounded to keep_last (2 kept + new)
+
+
 def test_default_step_fn_computes_contrastive_when_weighted(tmp_path):
     from viora.training.trainer import default_step_fn
 
