@@ -34,7 +34,7 @@ peft = ["peft>=0.10"]                      # LoRA / adapters
 serving = ["fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2.6", "python-multipart"]
 metrics = ["pycocoevalcap"]               # CIDEr/BLEU (optional, heavy)
 tracking = ["tensorboard>=2.15"]
-dev = ["pytest>=7.4", "pytest-cov", "ruff>=0.4", "mypy>=1.9"]
+dev = ["pytest>=7.4", "pytest-cov", "ruff==0.15.22", "mypy>=1.9"]
 all = [
     "av>=11.0",
     "transformers>=4.40",
@@ -42,7 +42,7 @@ all = [
     "huggingface_hub",
     "pydantic>=2.6",
     "pytest>=7.4",
-    "ruff>=0.4",
+    "ruff==0.15.22",
 ]
 
 [project.scripts]

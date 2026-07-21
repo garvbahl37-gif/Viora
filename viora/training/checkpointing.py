@@ -80,7 +80,7 @@ def load_checkpoint(
     if not trusted:
         # Safe path: refuses to execute arbitrary pickled code.
         state = torch.load(path, map_location=map_location, weights_only=True)
-        model.load_state_dict(state["model"] if "model" in state else state, strict=strict)
+        model.load_state_dict(state.get("model", state), strict=strict)
         return {"step": 0, "epoch": 0, "config": None, "viora_version": None, "extra": {}}
     ckpt = torch.load(path, map_location=map_location, weights_only=False)  # noqa: S614 - trusted, self-produced
 
