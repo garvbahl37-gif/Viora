@@ -106,6 +106,52 @@ def test_tiny_training_loop_runs(tmp_path):
     assert not torch.allclose(p_before, next(trainer.model.parameters()))
 
 
+def _toy_tok(texts):
+    n = len(texts)
+    return {"input_ids": torch.ones(n, 4, dtype=torch.long),
+            "attention_mask": torch.ones(n, 4, dtype=torch.long),
+            "labels": torch.ones(n, 4, dtype=torch.long)}
+
+
+def test_batch_to_device_moves_tensors_and_preserves_meta():
+    ds = SyntheticVideoDataset(size=2, num_frames=8, image_size=32)
+    batch = VideoTextCollator(tokenize_fn=_toy_tok)([ds[0], ds[1]])
+    moved = batch.to("cpu")
+    for t in (moved.video, moved.frame_mask, moved.timestamps,
+              moved.input_ids, moved.attention_mask, moved.labels):
+        assert t.device.type == "cpu"
+    assert moved.meta == batch.meta
+
+    # untokenized batch: text fields stay None (no crash on .to())
+    plain = VideoTextCollator()([ds[0]])
+    m2 = plain.to("cpu")
+    assert m2.input_ids is None and m2.attention_mask is None and m2.labels is None
+
+
+def test_trainer_moves_batch_to_device(tmp_path):
+    """Regression: the trainer MUST move each batch to its device before the forward
+    pass. A CPU batch against CUDA weights was the training-time crash; on CPU CI we
+    assert both the dispatch and that train_step applies it."""
+    model = VioraForVideoUnderstanding(tiny_viora_config())
+    trainer = Trainer(model, _train_cfg(tmp_path, max_steps=1), device="cpu")
+
+    # dispatch: VideoTextBatch / dict / tensor all land on trainer.device
+    ds = SyntheticVideoDataset(size=2, num_frames=8, image_size=32)
+    batch = VideoTextCollator(tokenize_fn=_toy_tok)([ds[0], ds[1]])
+    assert trainer._to_device(batch).video.device == trainer.device
+    d = trainer._to_device({"x": torch.ones(2), "n": 5})
+    assert d["x"].device == trainer.device and d["n"] == 5
+    assert trainer._to_device(torch.ones(2)).device == trainer.device
+
+    # integration: the training loop actually routes batches through _to_device
+    seen = {"called": False}
+    orig = trainer._to_device
+    trainer._to_device = lambda b: (seen.__setitem__("called", True), orig(b))[1]
+    loader = DataLoader(ds, batch_size=2, collate_fn=VideoTextCollator(tokenize_fn=_toy_tok))
+    trainer.train(loader)
+    assert seen["called"] is True
+
+
 def test_nan_loss_is_flagged_not_hidden(tmp_path):
     model = VioraForVideoUnderstanding(tiny_viora_config())
 

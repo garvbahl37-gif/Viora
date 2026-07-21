@@ -35,6 +35,26 @@ class VideoTextBatch:
         m = self.frame_mask[:, :usable].reshape(b, usable // tubelet_size, tubelet_size)
         return m.all(dim=2)
 
+    def to(self, device: torch.device | str, *, non_blocking: bool = False) -> VideoTextBatch:
+        """Move every tensor field to ``device`` (``meta`` is left untouched).
+
+        The collator builds CPU tensors; training on CUDA/MPS needs the batch on the
+        model's device before the forward pass, or the first op mismatches CPU input
+        against device weights.
+        """
+        def mv(x: torch.Tensor | None) -> torch.Tensor | None:
+            return x.to(device, non_blocking=non_blocking) if x is not None else None
+
+        return VideoTextBatch(
+            video=mv(self.video),
+            frame_mask=mv(self.frame_mask),
+            timestamps=mv(self.timestamps),
+            input_ids=mv(self.input_ids),
+            attention_mask=mv(self.attention_mask),
+            labels=mv(self.labels),
+            meta=self.meta,
+        )
+
 
 class VideoTextCollator:
     def __init__(

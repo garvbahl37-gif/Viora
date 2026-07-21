@@ -143,8 +143,20 @@ class Trainer:
         logger.info("resumed from %s at step %d", path, self.step)
 
     # --------------------------------------------------------- train loop
+    def _to_device(self, batch: Any) -> Any:
+        """Move a batch onto the training device (collators produce CPU tensors)."""
+        if isinstance(batch, VideoTextBatch):
+            return batch.to(self.device)
+        if isinstance(batch, dict):
+            return {k: (v.to(self.device) if isinstance(v, torch.Tensor) else v)
+                    for k, v in batch.items()}
+        if isinstance(batch, torch.Tensor):
+            return batch.to(self.device)
+        return batch
+
     def train_step(self, batch: Any) -> dict:
         self.model.train()
+        batch = self._to_device(batch)
         with autocast_context(self.device.type, enabled=self.amp_dtype is not None, dtype=self.amp_dtype):
             out = self.step_fn(self.model, batch)
         if out.loss is None:
@@ -218,6 +230,7 @@ class Trainer:
         self.model.eval()
         tracker = MetricTracker()
         for batch in val_loader:
+            batch = self._to_device(batch)
             with autocast_context(self.device.type, enabled=self.amp_dtype is not None, dtype=self.amp_dtype):
                 out = self.step_fn(self.model, batch)
             if out.loss is not None and torch.isfinite(out.loss):
