@@ -116,8 +116,23 @@ ranks. Build shards from your data with:
 
 ```bash
 python scripts/build_shards.py --synthetic 2000 --out data/shards/train-%06d.tar   # validate
-# real data: map your dataset -> (video, {question/answer/caption}) and feed write_video_text_shards
+
+# MSR-VTT (videos dir + videodatainfo.json): store each clip once with all its captions
+python scripts/prepare_video_dataset.py \
+  --videos /data/msrvtt/TrainValVideo \
+  --annotations /data/msrvtt/train_val_videodatainfo.json \
+  --format msrvtt --split train \
+  --out data/shards/msrvtt-train-%06d.tar
+
+# any dataset (MSVD / your own): a {clip_id: caption | [captions]} JSON sidecar
+python scripts/prepare_video_dataset.py \
+  --videos /data/clips --annotations captions.json \
+  --format folder --out data/shards/train-%06d.tar
 ```
+
+The adapter (`viora/data/adapters/video_caption.py`) stores raw mp4 bytes once per clip
+(decoded/sampled at train time) with all reference captions in metadata; the collator samples one
+caption per view. Use `--limit N` for a quick subset before the full build.
 
 Under the hood:
 

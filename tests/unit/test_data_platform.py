@@ -114,6 +114,17 @@ def test_collator_pads_and_masks_variable_lengths():
     assert tok_mask[1, 3].item() is False  # last tubelet of the short clip is padded
 
 
+def test_collator_formats_text_variants():
+    fmt = VideoTextCollator._format_text
+    assert fmt({"question": "what?", "answer": "a cat"}) == "<video>\nQuestion: what?\nAnswer: a cat"
+    assert fmt({"caption": "a dog runs"}) == "<video>\na dog runs"
+    assert fmt({}) == "<video>\n"
+    # multi-reference captions (MSR-VTT): one is sampled and wrapped
+    caps = ["a", "b", "c"]
+    out = fmt({"captions": caps})
+    assert out.startswith("<video>\n") and out.split("\n", 1)[1] in caps
+
+
 # ------------------------------------------------------------- preprocessing
 def test_transform_and_dedup_and_leakage():
     v = VideoTransform(size=16)(torch.rand(3, 4, 40, 30))

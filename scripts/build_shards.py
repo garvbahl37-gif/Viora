@@ -4,8 +4,9 @@
     # synthetic shards (validate the pipeline, no data needed):
     python scripts/build_shards.py --synthetic 256 --out data/shards/train-%06d.tar
 
-    # real datasets: implement the per-dataset -> VideoSample -> (video, meta) mapping
-    # in the adapter, then feed those samples here (see docs/PRODUCTION.md).
+    # real datasets (MSR-VTT / MSVD / your own videos):
+    #     python scripts/prepare_video_dataset.py --videos <dir> --annotations <json> ...
+    # (see scripts/prepare_video_dataset.py and docs/PRODUCTION.md).
 """
 from __future__ import annotations
 
@@ -44,7 +45,10 @@ def main() -> int:
         n = write_video_text_shards(synthetic_samples(args.synthetic), args.out, maxcount=args.maxcount)
         print(f"wrote {n} synthetic samples to shards matching {args.out}")
         return 0
-    raise SystemExit("provide --synthetic N (real dataset sharding: see docs/PRODUCTION.md)")
+    raise SystemExit(
+        "provide --synthetic N. For real datasets use scripts/prepare_video_dataset.py "
+        "(MSR-VTT / MSVD / a folder of videos + captions)."
+    )
 
 
 if __name__ == "__main__":

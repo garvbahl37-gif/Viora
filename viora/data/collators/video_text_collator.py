@@ -9,6 +9,7 @@ specific tokenizer) with a ``<video>`` placeholder for visual-token injection.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -98,6 +99,9 @@ class VideoTextCollator:
         q, a = it.get("question"), it.get("answer")
         if q and a:
             return f"<video>\nQuestion: {q}\nAnswer: {a}"
+        caps = it.get("captions")  # multiple reference captions per clip (e.g. MSR-VTT)
+        if caps:
+            return f"<video>\n{random.choice(caps)}"  # sample one per view (augmentation)
         if it.get("caption"):
             return f"<video>\n{it['caption']}"
         return "<video>\n"

@@ -1,0 +1,99 @@
+"""Real video-caption dataset -> shards adapter (MSR-VTT + folder-sidecar)."""
+
+from __future__ import annotations
+
+import json
+import shutil
+
+import pytest
+import torch
+
+wds = pytest.importorskip("webdataset")
+_HAS_FFMPEG = shutil.which("ffmpeg") is not None
+pytestmark = pytest.mark.skipif(not _HAS_FFMPEG, reason="needs ffmpeg for mp4 encode")
+
+from viora.data.adapters.video_caption import (  # noqa: E402
+    build_caption_shards,
+    caption_shard_samples,
+    index_video_files,
+    parse_folder_sidecar,
+    parse_msrvtt,
+)
+from viora.data.webdataset_pipeline import (  # noqa: E402
+    build_video_text_webdataset,
+    tensor_to_mp4_bytes,
+)
+
+
+def _write_videos(dir_, ids):
+    dir_.mkdir(parents=True, exist_ok=True)
+    for vid in ids:
+        (dir_ / f"{vid}.mp4").write_bytes(tensor_to_mp4_bytes(torch.rand(3, 8, 32, 32), fps=4.0))
+
+
+def test_index_video_files_maps_name_and_stem(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1"])
+    idx = index_video_files(tmp_path / "vids")
+    assert idx["video0"] == idx["video0.mp4"]          # both forms resolve
+    assert len(set(idx.values())) == 2                 # two distinct files
+
+
+def test_parse_msrvtt_groups_and_filters_split(tmp_path):
+    ann = tmp_path / "videodatainfo.json"
+    ann.write_text(json.dumps({
+        "videos": [{"video_id": "video0", "split": "train"},
+                   {"video_id": "video1", "split": "validate"}],
+        "sentences": [{"video_id": "video0", "caption": "a cat"},
+                      {"video_id": "video0", "caption": "a small cat"},
+                      {"video_id": "video1", "caption": "a dog"}],
+    }))
+    train = parse_msrvtt(ann, split="train")
+    assert set(train) == {"video0"} and len(train["video0"]) == 2   # split filter + grouping
+    both = parse_msrvtt(ann, split=None)
+    assert set(both) == {"video0", "video1"}
+
+
+def test_parse_folder_sidecar_accepts_str_or_list(tmp_path):
+    ann = tmp_path / "caps.json"
+    ann.write_text(json.dumps({"a": "one caption", "b": ["two", "captions"]}))
+    caps = parse_folder_sidecar(ann)
+    assert caps["a"] == ["one caption"] and caps["b"] == ["two", "captions"]
+
+
+def test_caption_samples_skip_missing_videos(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0"])          # only video0 exists
+    idx = index_video_files(tmp_path / "vids")
+    caps = {"video0": ["c0"], "video99": ["missing"]}
+    out = list(caption_shard_samples(caps, idx))
+    assert len(out) == 1 and out[0]["meta"]["video_id"] == "video0"
+    assert out[0]["meta"]["captions"] == ["c0"] and out[0]["video_bytes"]
+
+
+def test_build_caption_shards_end_to_end_msrvtt(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1"])
+    ann = tmp_path / "videodatainfo.json"
+    ann.write_text(json.dumps({
+        "videos": [{"video_id": "video0", "split": "train"},
+                   {"video_id": "video1", "split": "train"}],
+        "sentences": [{"video_id": "video0", "caption": "a cat plays"},
+                      {"video_id": "video1", "caption": "a dog runs"}],
+    }))
+    pattern = str(tmp_path / "msrvtt-train-%06d.tar")
+    n = build_caption_shards(tmp_path / "vids", ann, pattern, fmt="msrvtt", split="train")
+    assert n == 2
+
+    ds = build_video_text_webdataset(
+        str(tmp_path / "msrvtt-train-000000.tar"), num_frames=8, resampled=False, shuffle=0
+    )
+    items = list(iter(ds))
+    assert len(items) == 2
+    assert items[0]["video"].shape[:2] == (3, 8)          # decoded [C=3, T=8, ...]
+    assert "captions" in items[0]                          # meta carries reference captions
+
+
+def test_build_caption_shards_bad_ids_write_zero(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0"])
+    ann = tmp_path / "caps.json"
+    ann.write_text(json.dumps({"does_not_exist": "nope"}))   # id has no matching file
+    n = build_caption_shards(tmp_path / "vids", ann, str(tmp_path / "t-%06d.tar"), fmt="folder")
+    assert n == 0
