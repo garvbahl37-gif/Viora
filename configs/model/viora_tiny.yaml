@@ -1,0 +1,86 @@
+# Viora-Tiny — the first fully-working development configuration.
+#
+# Scale target: a model that passes a full end-to-end forward on CPU/MPS in
+# seconds, NOT a research-grade model. These are development hyperparameters,
+# not tuned defaults. Parameter count is reported by scripts/validate_environment
+# and viora.models.viora.count_parameters (do NOT assume a size from the name).
+
+name: viora_tiny
+
+vision:
+  image_size: 224
+  num_frames: 16
+  in_channels: 3
+  tubelet_size: 2        # -> 8 temporal positions from 16 frames
+  patch_size: 16         # -> 14x14 spatial patches from 224px
+  dim: 384
+  depth: 6
+  num_heads: 6
+  mlp_ratio: 4.0
+  attention_mode: factorized   # factorized | full
+  norm_type: layernorm
+  mlp_type: mlp
+  drop_path_rate: 0.1
+  pos_embed_spatial: learnable
+  pos_embed_temporal: learnable
+  use_sdpa: true
+  gradient_checkpointing: false
+
+temporal:
+  dim: 384
+  depth: 4
+  num_heads: 6
+  local_window: 4
+  global_layers: 2
+  spatial_pool: mean
+  mlp_ratio: 4.0
+  drop_path_rate: 0.1
+  use_sdpa: true
+
+event:
+  num_queries: 16
+  dim: 384
+  num_heads: 6
+  num_layers: 2
+
+memory:
+  enabled: true
+  dim: 384
+  short_term_size: 16
+  long_term_size: 32
+  max_tokens: 48
+  eviction: importance
+  compression: mean
+
+resampler:
+  num_queries: 32
+  dim: 384
+  num_heads: 6
+  num_layers: 2
+
+projector:
+  type: mlp
+  input_dim: 384
+  output_dim: 0          # 0 -> resolve from LLM hidden size
+  depth: 2
+  activation: gelu
+
+llm:
+  name_or_path: ""       # set an HF causal-LM id for real runs
+  dummy: true            # tiny built-in decoder so the config runs with no download
+  train_mode: frozen     # frozen | lora | full
+  hidden_size: 512       # used only when dummy=true
+  vocab_size: 32000      # used only when dummy=true
+  max_length: 512
+  video_token: "<video>"
+  dtype: float32
+
+grounding:
+  enabled: true
+  num_bins: 64
+  hidden_dim: 384
+
+tasks:
+  - video_qa
+  - captioning
+  - temporal_grounding

@@ -1,0 +1,51 @@
+# Small config for the controlled synthetic task (scripts/train_synthetic.py).
+# Vocab + dims are sized to actually learn on CPU in minutes.
+name: viora_synth
+vision:
+  image_size: 32
+  num_frames: 8
+  tubelet_size: 2      # T'=4
+  patch_size: 8        # H'=W'=4  -> N=4*4*4=64 tokens
+  dim: 128
+  depth: 3
+  num_heads: 4
+  attention_mode: factorized
+  drop_path_rate: 0.0
+  use_sdpa: true
+temporal:
+  dim: 128
+  depth: 2
+  num_heads: 4
+  local_window: 2
+  global_layers: 1
+event:
+  num_queries: 8
+  dim: 128
+  num_heads: 4
+  num_layers: 1
+memory:
+  enabled: true
+  dim: 128
+  short_term_size: 8
+  long_term_size: 8
+  max_tokens: 16
+resampler:
+  num_queries: 16
+  dim: 128
+  num_heads: 4
+  num_layers: 2
+projector:
+  type: mlp
+  input_dim: 128
+  output_dim: 0
+  depth: 2
+llm:
+  dummy: true
+  hidden_size: 128
+  vocab_size: 21        # == SimpleTokenizer vocab
+  max_length: 48
+grounding:
+  enabled: true
+  num_bins: 8
+  hidden_dim: 128
+tasks: [video_qa, temporal_grounding]

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Viora artifacts
+runs/
+outputs/
+checkpoints/
+*.viora            # serialized video indices
+wandb/
+logs/
+*.log
+
+# Datasets (never commit raw video / large data)
+data/raw/
+data/processed/
+data/cache/
+datasets/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

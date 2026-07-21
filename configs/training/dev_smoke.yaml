@@ -1,0 +1,17 @@
+# Tiny CPU/MPS smoke config — a few optimization steps on synthetic data.
+# Used by scripts/train_stage1.py --smoke and the training tests.
+stage: 0
+output_dir: runs/dev_smoke
+seed: 0
+max_steps: 6
+batch_size: 2
+grad_accum: 2
+lr: 1.0e-4
+warmup_steps: 2
+scheduler: cosine
+precision: fp32
+freeze_llm: false
+num_workers: 0
+log_every: 2
+save_every: 0
+loss_weights: {lm: 1.0, grounding: 1.0}

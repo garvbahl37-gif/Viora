@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg (video decode tests)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Create venv + install (CPU torch)
+        run: |
+          uv venv
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e ".[all]" uvicorn
+
+      - name: Lint (ruff)
+        run: uv run ruff check viora scripts tests
+
+      - name: Tests (pytest)
+        run: uv run pytest -q
+
+      - name: Smoke train (synthetic, a few steps)
+        run: uv run python scripts/train.py --smoke

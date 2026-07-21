@@ -1,0 +1,83 @@
+"""Collate variable-length video/text items into padded model batches.
+
+Videos are padded on the temporal axis to the batch max and a **frame-level**
+validity mask is produced; it is downsampled to the token grid (``T'`` after
+tubelet embedding) so the model masks padded temporal tokens. Text is optionally
+tokenized (a ``tokenize_fn`` is injected so the collator stays independent of any
+specific tokenizer) with a ``<video>`` placeholder for visual-token injection.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+import torch
+
+
+@dataclass
+class VideoTextBatch:
+    video: torch.Tensor                 # [B, C, Tmax, H, W]
+    frame_mask: torch.Tensor            # [B, Tmax] True = real frame
+    timestamps: torch.Tensor            # [B, Tmax]
+    input_ids: torch.Tensor | None      # [B, L]
+    attention_mask: torch.Tensor | None
+    labels: torch.Tensor | None
+    meta: list[dict]
+
+    def token_temporal_mask(self, tubelet_size: int) -> torch.Tensor:
+        """Downsample the frame mask to token temporal positions ``T' = Tmax/tubelet``.
+
+        A token position is valid iff **all** frames in its tubelet are valid.
+        """
+        b, tmax = self.frame_mask.shape
+        usable = (tmax // tubelet_size) * tubelet_size
+        m = self.frame_mask[:, :usable].reshape(b, usable // tubelet_size, tubelet_size)
+        return m.all(dim=2)
+
+
+class VideoTextCollator:
+    def __init__(
+        self,
+        tokenize_fn: Callable[[list[str]], dict] | None = None,
+        *,
+        pad_value: float = 0.0,
+    ) -> None:
+        self.tokenize_fn = tokenize_fn
+        self.pad_value = pad_value
+
+    def __call__(self, items: list[dict]) -> VideoTextBatch:
+        b = len(items)
+        c, _, h, w = items[0]["video"].shape
+        tmax = max(it["video"].shape[1] for it in items)
+
+        video = torch.full((b, c, tmax, h, w), self.pad_value)
+        frame_mask = torch.zeros(b, tmax, dtype=torch.bool)
+        timestamps = torch.zeros(b, tmax)
+        for i, it in enumerate(items):
+            t = it["video"].shape[1]
+            video[i, :, :t] = it["video"]
+            frame_mask[i, :t] = True
+            ts = it.get("timestamps")
+            if ts is not None:
+                timestamps[i, :t] = ts
+
+        input_ids = attention_mask = labels = None
+        if self.tokenize_fn is not None:
+            texts = [self._format_text(it) for it in items]
+            tok = self.tokenize_fn(texts)
+            input_ids = tok.get("input_ids")
+            attention_mask = tok.get("attention_mask")
+            labels = tok.get("labels")
+
+        meta = [{k: v for k, v in it.items() if k not in ("video", "timestamps")} for it in items]
+        return VideoTextBatch(video, frame_mask, timestamps, input_ids, attention_mask, labels, meta)
+
+    @staticmethod
+    def _format_text(it: dict) -> str:
+        q, a = it.get("question"), it.get("answer")
+        if q and a:
+            return f"<video>\nQuestion: {q}\nAnswer: {a}"
+        if it.get("caption"):
+            return f"<video>\n{it['caption']}"
+        return "<video>\n"

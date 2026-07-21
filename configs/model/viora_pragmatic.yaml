@@ -1,0 +1,66 @@
+# Production PRAGMATIC config: pretrained vision (SigLIP) + pretrained LLM (Qwen2.5)
+# + trainable temporal/event/resampler/projector + LoRA on the LLM.
+# This is the shipping recipe — no from-scratch vision or LLM pretraining.
+# Sized to build + run on an M5 Pro; scale dims/LLM for cloud training.
+name: viora_pragmatic
+
+vision:
+  backbone: pretrained
+  pretrained_name: google/siglip-base-patch16-224   # frozen image encoder (hidden 768)
+  pretrained_pool: mean
+  freeze_backbone: true
+  image_size: 224
+  num_frames: 8
+  dim: 512            # Viora working dim (SigLIP 768 -> 512 projection)
+
+temporal:
+  dim: 512
+  depth: 4
+  num_heads: 8
+  local_window: 3
+  global_layers: 2
+
+event:
+  num_queries: 32
+  dim: 512
+  num_heads: 8
+  num_layers: 2
+
+memory:
+  enabled: true
+  dim: 512
+  short_term_size: 32
+  long_term_size: 32
+  max_tokens: 64
+
+resampler:
+  num_queries: 32
+  dim: 512
+  num_heads: 8
+  num_layers: 3
+
+projector:
+  type: mlp
+  input_dim: 512
+  output_dim: 0        # -> resolve to LLM hidden (896 for Qwen2.5-0.5B)
+  depth: 2
+
+llm:
+  dummy: false
+  name_or_path: Qwen/Qwen2.5-0.5B-Instruct   # swap to 1.5B/3B/7B for cloud
+  train_mode: lora                            # frozen backbone + LoRA adapters
+  dtype: float32                              # bf16 on CUDA
+  video_token: "<video>"
+  max_length: 512
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj, k_proj, v_proj, o_proj]
+
+grounding:
+  enabled: true
+  num_bins: 32
+  hidden_dim: 512
+
+tasks: [video_qa, temporal_grounding, captioning]

@@ -1,0 +1,31 @@
+# LoRA fine-tune of the pragmatic model (frozen SigLIP + frozen Qwen + LoRA + trained bridge).
+# Stage this: run alignment first (freeze_llm: true, LM+contrastive), then instruction-tune
+# (train_mode lora in the model config carries the adapters). Example values — tune for your run.
+stage: 2
+output_dir: runs/pragmatic
+seed: 0
+
+max_steps: 20000          # Mac: use a few hundred to validate; cloud: 10k-50k
+batch_size: 8             # Mac: 1-2; 8xA100: 32-64
+grad_accum: 4
+lr: 1.0e-4                # LoRA + bridge
+min_lr: 1.0e-6
+weight_decay: 0.0
+warmup_steps: 500
+scheduler: cosine
+optimizer: adamw
+grad_clip: 1.0
+
+precision: bf16           # CUDA; use fp32 on the Mac
+gradient_checkpointing: true
+freeze_vision: true       # SigLIP stays frozen
+freeze_llm: false         # LoRA adapters train (base LLM frozen inside PEFT)
+
+num_workers: 8
+datasets: [msrvtt]        # start with one downloadable set; add nextqa/videoinstruct
+mixture_weights: {msrvtt: 1.0}
+loss_weights: {lm: 1.0, grounding: 0.5, contrastive: 0.5, order: 0.0}
+
+log_every: 20
+eval_every: 1000
+save_every: 1000

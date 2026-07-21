@@ -1,0 +1,83 @@
+[project]
+name = "viora"
+version = "0.1.0"
+description = "Viora-1: a modular spatiotemporal video-language intelligence model"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Viora contributors" }]
+keywords = [
+    "video-language-model",
+    "multimodal",
+    "temporal-reasoning",
+    "video-question-answering",
+    "vision-transformer",
+]
+
+# Core runtime dependencies. Deliberately minimal: heavy / optional backends
+# (decord, deepspeed, peft, fastapi) live in the optional groups below so the
+# base install stays CPU-friendly and does not assume CUDA.
+dependencies = [
+    "torch>=2.2",
+    "numpy>=1.24",
+    "einops>=0.7",
+    "pyyaml>=6.0",
+    "omegaconf>=2.3",
+    "tqdm>=4.65",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+video = ["av>=11.0"]                       # PyAV decoding backend
+llm = ["transformers>=4.40", "safetensors", "huggingface_hub"]
+peft = ["peft>=0.10"]                      # LoRA / adapters
+serving = ["fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2.6", "python-multipart"]
+metrics = ["pycocoevalcap"]               # CIDEr/BLEU (optional, heavy)
+tracking = ["tensorboard>=2.15"]
+dev = ["pytest>=7.4", "pytest-cov", "ruff>=0.4", "mypy>=1.9"]
+all = [
+    "av>=11.0",
+    "transformers>=4.40",
+    "safetensors",
+    "huggingface_hub",
+    "pydantic>=2.6",
+    "pytest>=7.4",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+viora = "viora.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["viora*"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: requires a CUDA/MPS device",
+    "network: requires network / dataset access",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # function calls in argument defaults (common for configs)
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+ignore_missing_imports = true
+check_untyped_defs = true

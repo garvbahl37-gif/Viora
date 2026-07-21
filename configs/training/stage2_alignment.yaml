@@ -1,0 +1,33 @@
+# Stage 2 — Video-Language Alignment (example experiment config).
+# Loaded against viora.utils.config.TrainingConfig. Example ratios, NOT tuned.
+# Not every stage must run to exercise the repo; see docs/TRAINING.md.
+
+stage: 2
+output_dir: runs/stage2_alignment
+seed: 0
+
+max_steps: 20000
+batch_size: 8
+grad_accum: 4
+lr: 1.0e-4
+min_lr: 1.0e-6
+weight_decay: 0.05
+warmup_steps: 1000
+scheduler: cosine
+optimizer: adamw
+grad_clip: 1.0
+
+precision: bf16
+gradient_checkpointing: true
+freeze_vision: false
+freeze_llm: true          # align the bridge first; unfreeze later stages
+
+num_workers: 8
+datasets: [webvid, internvid, msrvtt]
+mixture_weights: {webvid: 0.4, internvid: 0.4, msrvtt: 0.2}
+mixture_temperature: 1.0
+loss_weights: {lm: 1.0, contrastive: 1.0, grounding: 0.0, order: 0.0}
+
+log_every: 50
+eval_every: 2000
+save_every: 2000

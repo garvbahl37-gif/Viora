@@ -1,0 +1,1302 @@
+<style>
+/* @FONTS@ */
+
+/* ---------------------------------------------------------------- tokens */
+:root {
+  color-scheme: dark;
+
+  --font-display: "Sora", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+
+  /* committed dark "night studio" — neutrals biased toward the iris accent */
+  --canvas: #0A0C12;
+  --surface: #10131C;
+  --surface-2: #141826;
+  --raised: #1B2130;
+  --raised-2: #222A3B;
+  --line: #242B3D;
+  --line-2: #323B54;
+
+  --ink: #ECEEF5;
+  --ink-2: #AAB2C7;
+  --ink-3: #7A8099;
+  --ink-4: #4E5670;
+
+  /* spectral cool field */
+  --iris: #7E77FF;
+  --iris-2: #9B94FF;
+  --aqua: #4FD6E8;
+  --aqua-2: #82E4F1;
+
+  /* the one warm ignition = active evidence + primary action */
+  --flare: #FF9552;
+  --flare-2: #FFB27E;
+  --flare-ink: #1B0E05;
+
+  /* semantic (separate from accent) */
+  --fault: #FF5C6C;
+  --warn: #FFC24B;
+  --good: #4FD6E8;
+
+  --iris-soft: rgba(126, 119, 255, 0.14);
+  --aqua-soft: rgba(79, 214, 232, 0.13);
+  --flare-soft: rgba(255, 149, 82, 0.15);
+
+  --r-card: 14px;
+  --r-ctrl: 10px;
+  --r-sm: 8px;
+  --r-pill: 999px;
+
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 18px 42px -20px rgba(0, 0, 0, 0.7);
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 22px -14px rgba(0, 0, 0, 0.6);
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv01", "ss01";
+}
+
+/* ambient depth: a very low vignette + faint iris glow at top-left */
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(1200px 620px at 8% -8%, rgba(126, 119, 255, 0.10), transparent 60%),
+    radial-gradient(1000px 560px at 108% 4%, rgba(79, 214, 232, 0.06), transparent 55%),
+    radial-gradient(900px 900px at 50% 120%, rgba(0, 0, 0, 0.5), transparent 60%);
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+button { font-family: inherit; cursor: pointer; }
+
+:focus-visible {
+  outline: 2px solid var(--iris-2);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------------ shell */
+.app {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+/* ---------------------------------------------------------------- topbar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  background: color-mix(in srgb, var(--canvas) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { display: flex; align-items: baseline; gap: 11px; }
+
+.mark { align-self: center; width: 26px; height: 26px; display: block; }
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.14em;
+  padding-left: 2px;
+}
+
+.thesis {
+  font-family: var(--font-body);
+  font-weight: 500;
+  color: var(--ink-2);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+.thesis::before { content: "— "; color: var(--ink-4); }
+
+.top-right { display: flex; align-items: center; gap: 12px; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  padding: 6px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  cursor: help;
+}
+.status::before {
+  content: "";
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--aqua);
+  box-shadow: 0 0 0 3px var(--aqua-soft);
+}
+
+/* ---------------------------------------------------------------- studio */
+.studio {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 18px;
+  padding: 18px 24px 8px;
+  align-items: start;
+}
+
+.stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------------------------------------------------------------- viewer */
+.viewer {
+  position: relative;
+  aspect-ratio: 16 / 7.2;
+  overflow: hidden;
+  background: #06070C;
+}
+.latent { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.player { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #06070C; display: block; }
+
+.upload-btn {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  padding: 6px 13px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.upload-btn:hover { border-color: var(--iris); background: var(--raised-2); }
+.status.live::before { background: var(--flare); box-shadow: 0 0 0 3px var(--flare-soft); }
+
+.viewer-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: linear-gradient(to top, rgba(6, 7, 12, 0.62) 0%, transparent 32%, transparent 78%, rgba(6, 7, 12, 0.35) 100%);
+  pointer-events: none;
+}
+.viewer-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.file {
+  font-size: 12.5px;
+  color: var(--ink);
+  background: rgba(10, 12, 18, 0.55);
+  border: 1px solid var(--line-2);
+  padding: 4px 9px;
+  border-radius: var(--r-sm);
+}
+.latent-note { font-size: 11.5px; color: var(--ink-3); letter-spacing: 0.01em; }
+
+.transport { display: flex; align-items: center; gap: 12px; pointer-events: auto; }
+.play {
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: rgba(16, 19, 28, 0.7);
+  color: var(--ink);
+  transition: border-color 0.2s var(--ease), transform 0.15s var(--ease), background 0.2s var(--ease);
+}
+.play:hover { border-color: var(--iris); background: var(--raised); transform: translateY(-1px); }
+.play svg { width: 15px; height: 15px; }
+.time { font-size: 13px; color: var(--ink-2); }
+.time #cur { color: var(--ink); }
+
+/* -------------------------------------------------------- timeline (hero) */
+.timeline { padding: 15px 18px 13px; }
+.tl-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.tl-title {
+  font-family: var(--font-display);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-2);
+}
+.tl-legend { display: flex; gap: 16px; align-items: center; font-size: 11.5px; color: var(--ink-3); }
+.tl-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.tl-legend .k-ev { background: var(--aqua); }
+.tl-legend .k-evi { background: var(--flare); box-shadow: 0 0 8px var(--flare); }
+
+.tl-track {
+  position: relative;
+  height: 66px;
+  border-radius: var(--r-ctrl);
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+}
+/* the cool field = the flow of time */
+.tl-field {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg,
+      rgba(126, 119, 255, 0.16) 0%,
+      rgba(96, 150, 236, 0.12) 42%,
+      rgba(79, 214, 232, 0.16) 100%);
+}
+.tl-field::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent, transparent 58px, rgba(255, 255, 255, 0.03) 58px, rgba(255, 255, 255, 0.03) 59px);
+}
+.tl-events { position: absolute; inset: 0; }
+.ev-mark {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 26px;
+  min-width: 5px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--aqua-2), var(--aqua));
+  opacity: 0.62;
+  box-shadow: 0 0 0 1px rgba(10, 12, 18, 0.5);
+  transition: opacity 0.18s var(--ease), height 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.ev-mark[data-imp="high"] { height: 40px; opacity: 0.82; }
+.ev-mark[data-imp="med"]  { height: 30px; opacity: 0.68; }
+.ev-mark[data-imp="low"]  { height: 20px; opacity: 0.5; }
+.ev-mark:hover, .ev-mark.lit {
+  opacity: 1;
+  box-shadow: 0 0 14px rgba(79, 214, 232, 0.6), 0 0 0 1px rgba(10, 12, 18, 0.5);
+}
+
+/* the ignition = active evidence turns the cool field warm */
+.tl-evidence { position: absolute; inset: 0; pointer-events: none; }
+.evi-band {
+  position: absolute;
+  top: 0; bottom: 0;
+  background: linear-gradient(180deg, rgba(255, 149, 82, 0.42), rgba(255, 149, 82, 0.14));
+  border-left: 1.5px solid var(--flare);
+  border-right: 1.5px solid var(--flare);
+  box-shadow: 0 0 26px 2px rgba(255, 149, 82, 0.45), inset 0 0 24px rgba(255, 149, 82, 0.16);
+  animation: ignite 0.5s var(--ease);
+}
+@keyframes ignite {
+  from { opacity: 0; filter: brightness(1.8); }
+  to { opacity: 1; filter: brightness(1); }
+}
+
+.tl-playhead {
+  position: absolute; top: -3px; bottom: -3px; left: 0;
+  width: 2px;
+  background: var(--ink);
+  box-shadow: 0 0 10px rgba(236, 238, 245, 0.7);
+  pointer-events: none;
+  transform: translateX(-1px);
+}
+.tl-playhead::before {
+  content: "";
+  position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 10px rgba(236, 238, 245, 0.8);
+}
+
+.tl-tooltip {
+  position: absolute;
+  z-index: 6;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--raised-2);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  color: var(--ink);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.14s var(--ease), transform 0.14s var(--ease);
+}
+.tl-tooltip.show { opacity: 1; transform: translateY(0); }
+.tl-tooltip time { font-family: var(--font-mono); color: var(--aqua-2); font-size: 11.5px; display: block; margin-bottom: 3px; }
+
+.tl-axis {
+  display: flex; justify-content: space-between;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ lower panels */
+.lower { display: grid; grid-template-columns: 1fr 0.82fr; gap: 14px; min-width: 0; }
+@media (max-width: 720px) { .lower { grid-template-columns: 1fr; } }
+
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px;
+}
+.panel-head h2 { font-size: 13.5px; letter-spacing: 0.01em; color: var(--ink); }
+.count, .budget {
+  font-size: 11.5px; color: var(--ink-3);
+  padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--r-pill);
+}
+
+.ev-list {
+  list-style: none; margin: 0; padding: 0 8px 10px;
+  max-height: 250px; overflow-y: auto;
+}
+.ev-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+  border: 1px solid transparent;
+}
+.ev-item:hover { background: var(--surface-2); }
+.ev-item.active { background: var(--flare-soft); border-color: rgba(255, 149, 82, 0.35); }
+.ev-time { font-family: var(--font-mono); font-size: 11.5px; color: var(--aqua-2); padding-top: 1px; white-space: nowrap; }
+.ev-item.active .ev-time { color: var(--flare-2); }
+.ev-desc { font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+.ev-item.active .ev-desc { color: var(--ink); }
+
+/* memory */
+.mem-tiers { display: flex; flex-direction: column; gap: 11px; padding: 4px 16px 6px; }
+.mem-tier { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 10px; }
+.mem-name { font-size: 12px; color: var(--ink-2); }
+.mem-bar { height: 8px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; border: 1px solid var(--line); }
+.mem-fill { height: 100%; border-radius: var(--r-pill); }
+.mem-fill.short { background: linear-gradient(90deg, var(--iris), var(--iris-2)); }
+.mem-fill.recent { background: linear-gradient(90deg, #5f8fe6, var(--aqua)); }
+.mem-fill.longt { background: linear-gradient(90deg, var(--aqua), var(--aqua-2)); }
+.mem-val { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); }
+.mem-note { padding: 6px 16px 15px; font-size: 11.5px; color: var(--ink-3); }
+
+/* pipeline */
+.pipeline { padding: 13px 16px; }
+.stages { list-style: none; display: flex; align-items: center; gap: 6px; margin: 0; padding: 0; overflow-x: auto; }
+.stage-item { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.stage-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 11px;
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  white-space: nowrap;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.stage-num { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+.stage-name { font-size: 12px; color: var(--ink-2); }
+.stage-item .arrow { color: var(--ink-3); font-size: 12px; }
+.stage-chip.on {
+  border-color: var(--iris);
+  background: var(--iris-soft);
+  box-shadow: 0 0 16px -4px rgba(126, 119, 255, 0.6);
+}
+.stage-chip.on .stage-name { color: var(--iris-2); }
+
+/* ------------------------------------------------------------------- ask */
+.ask {
+  position: sticky;
+  top: 74px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 92px);
+  min-height: 460px;
+  overflow: hidden;
+}
+.ask-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+.ask-head h2 { font-size: 15px; }
+.ask-sub { font-size: 12px; color: var(--ink-3); margin-top: 3px; display: block; }
+
+.thread { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 16px; }
+
+.msg { display: flex; flex-direction: column; gap: 6px; }
+.msg-q { align-items: flex-end; }
+.bubble-q {
+  align-self: flex-end;
+  max-width: 88%;
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  padding: 9px 13px;
+  border-radius: 13px 13px 4px 13px;
+  font-size: 13.5px;
+}
+.msg-a { align-items: flex-start; }
+.a-answer { font-size: 14px; color: var(--ink); line-height: 1.55; }
+.a-answer strong { color: var(--flare-2); font-weight: 600; }
+
+.evidence-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 3px; }
+.evi-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--flare-2);
+  background: var(--flare-soft);
+  border: 1px solid rgba(255, 149, 82, 0.35);
+  padding: 4px 9px;
+  border-radius: var(--r-pill);
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease);
+}
+.evi-chip::before { content: "▸"; color: var(--flare); font-size: 10px; }
+.evi-chip:hover { background: rgba(255, 149, 82, 0.24); transform: translateY(-1px); }
+
+.a-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 2px; }
+.score {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2);
+}
+.score .bar { width: 46px; height: 5px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.score .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--iris), var(--aqua)); }
+.score .cal { color: var(--ink-3); cursor: help; text-decoration: underline dotted var(--line-2); text-underline-offset: 3px; }
+.events-used { display: flex; flex-wrap: wrap; gap: 6px; }
+.eu-chip {
+  font-family: var(--font-mono); font-size: 11px; color: var(--aqua-2);
+  border: 1px solid var(--line-2); border-radius: var(--r-pill); padding: 3px 8px;
+  background: var(--surface-2);
+  transition: border-color 0.15s var(--ease);
+}
+.eu-chip:hover { border-color: var(--aqua); }
+
+.thinking { display: flex; align-items: center; gap: 9px; color: var(--ink-3); font-size: 12.5px; }
+.thinking .dots { display: inline-flex; gap: 4px; }
+.thinking .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--iris); animation: pulse 1.1s var(--ease) infinite; }
+.thinking .dots i:nth-child(2) { animation-delay: 0.16s; background: #6096ec; }
+.thinking .dots i:nth-child(3) { animation-delay: 0.32s; background: var(--aqua); }
+@keyframes pulse { 0%, 100% { opacity: 0.3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+
+.presets { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 18px; border-top: 1px solid var(--line); }
+.preset {
+  font-size: 12px; color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 6px 11px;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.preset:hover { border-color: var(--iris); color: var(--ink); background: var(--raised); }
+
+.composer { display: flex; gap: 9px; padding: 12px 14px 14px; border-top: 1px solid var(--line); }
+.composer input {
+  flex: 1;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctrl);
+  padding: 11px 13px;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.composer input::placeholder { color: var(--ink-3); }
+.composer input:focus { outline: none; border-color: var(--iris); box-shadow: 0 0 0 3px var(--iris-soft); }
+.send {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--flare-ink);
+  background: linear-gradient(180deg, var(--flare-2), var(--flare));
+  border: none;
+  border-radius: var(--r-ctrl);
+  padding: 0 18px;
+  transition: transform 0.12s var(--ease), filter 0.15s var(--ease);
+}
+.send:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.send:active { transform: translateY(0); }
+
+/* ------------------------------------------------------------------ footer */
+.footer {
+  padding: 14px 24px 26px;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.65;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+}
+.footer b { color: var(--ink-2); font-weight: 600; }
+.footer a { color: var(--ink-3); }
+
+/* ------------------------------------------------------------- responsive */
+@media (max-width: 1040px) {
+  .studio { grid-template-columns: 1fr; }
+  .ask { position: static; height: auto; min-height: 0; }
+  .thread { max-height: 420px; }
+}
+@media (max-width: 560px) {
+  .topbar { padding: 12px 16px; }
+  .thesis { display: none; }
+  .studio { padding: 14px 14px 4px; }
+  .lower { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.05ms !important; }
+}
+</style>
+
+<div class="grain" aria-hidden="true"></div>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="mg" x1="0" y1="0" x2="32" y2="32">
+            <stop offset="0" stop-color="#7E77FF"/>
+            <stop offset="1" stop-color="#4FD6E8"/>
+          </linearGradient>
+        </defs>
+        <circle cx="16" cy="16" r="12.5" stroke="url(#mg)" stroke-width="2.2" opacity="0.9"/>
+        <path d="M16 16 L16 5.5" stroke="url(#mg)" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M16 16 L24.4 20" stroke="#9B94FF" stroke-width="2.4" stroke-linecap="round" opacity="0.85"/>
+        <circle cx="24.4" cy="20" r="2.7" fill="#FF9552"/>
+      </svg>
+      <span class="wordmark">VIORA</span>
+      <span class="thesis">it sees time</span>
+    </div>
+    <div class="top-right">
+      <button class="upload-btn" id="upload-btn" type="button" title="Upload a video and ask Viora about it (needs the server running)">＋ Upload video</button>
+      <input id="file-input" type="file" accept="video/mp4,video/*" hidden />
+      <span class="status" id="status" title="Architecture preview. Viora's model is not yet trained — the events, answers, and scores shown use illustrative sample footage. Scores are uncalibrated model scores, not probabilities.">preview · sample footage · uncalibrated</span>
+    </div>
+  </header>
+
+  <main class="studio">
+    <section class="stage" aria-label="Video and temporal evidence">
+
+      <div class="viewer card">
+        <canvas class="latent" id="latent" aria-hidden="true"></canvas>
+        <video class="player" id="player" playsinline hidden></video>
+        <div class="viewer-overlay">
+          <div class="viewer-meta">
+            <span class="file mono" id="file-name">delivery_cam.mp4</span>
+            <span class="latent-note" id="view-note">Latent view — Viora's representation, not source footage</span>
+          </div>
+          <div class="transport">
+            <button class="play" id="play" aria-label="Play">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <span class="time"><span class="mono" id="cur">0:00</span><span style="color:var(--ink-4)"> / </span><span class="mono" id="dur">4:12</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="timeline card" aria-label="Temporal spectrum — events and evidence across time">
+        <div class="tl-head">
+          <span class="tl-title">Temporal spectrum</span>
+          <span class="tl-legend">
+            <span><i class="k-ev"></i>events</span>
+            <span><i class="k-evi"></i>evidence</span>
+          </span>
+        </div>
+        <div class="tl-track" id="track" role="slider" tabindex="0" aria-label="Seek video" aria-valuemin="0" aria-valuemax="252" aria-valuenow="0">
+          <div class="tl-field"></div>
+          <div class="tl-events" id="events-marks"></div>
+          <div class="tl-evidence" id="evidence-band"></div>
+          <div class="tl-playhead" id="playhead"></div>
+          <div class="tl-tooltip" id="tl-tip"></div>
+        </div>
+        <div class="tl-axis">
+          <span>0:00</span><span>1:03</span><span>2:06</span><span>3:09</span><span>4:12</span>
+        </div>
+      </div>
+
+      <div class="lower">
+        <div class="events card">
+          <div class="panel-head"><h2>Events</h2><span class="count mono" id="ev-count">12 tokens</span></div>
+          <ol class="ev-list" id="ev-list"></ol>
+        </div>
+        <div class="memory card">
+          <div class="panel-head"><h2>Temporal memory</h2><span class="budget mono" id="mem-budget">32 / 48</span></div>
+          <div class="mem-tiers">
+            <div class="mem-tier">
+              <span class="mem-name">Short-term</span>
+              <span class="mem-bar"><span class="mem-fill short" style="width:100%"></span></span>
+              <span class="mem-val">16</span>
+            </div>
+            <div class="mem-tier">
+              <span class="mem-name">Recent event</span>
+              <span class="mem-bar"><span class="mem-fill recent" style="width:75%"></span></span>
+              <span class="mem-val">12</span>
+            </div>
+            <div class="mem-tier">
+              <span class="mem-name">Long-term</span>
+              <span class="mem-bar"><span class="mem-fill longt" style="width:12%"></span></span>
+              <span class="mem-val">4 / 32</span>
+            </div>
+          </div>
+          <p class="mem-note">Bounded token budget · importance-aware eviction · timestamps preserved</p>
+        </div>
+      </div>
+
+      <div class="pipeline card" aria-label="Processing stages">
+        <ol class="stages" id="stages"></ol>
+      </div>
+    </section>
+
+    <aside class="ask card" aria-label="Ask Viora">
+      <div class="ask-head">
+        <h2>Ask Viora</h2>
+        <span class="ask-sub">Answers point back to the moment they came from.</span>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="presets" id="presets"></div>
+      <form class="composer" id="composer">
+        <input id="q" type="text" autocomplete="off" placeholder="Ask about anything in the clip…" aria-label="Ask a question about the video"/>
+        <button type="submit" class="send">Ask</button>
+      </form>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <b>Viora-1 · architecture preview.</b>
+    The spatiotemporal encoder, temporal memory, and grounding heads are implemented, but the model is
+    <b>not yet trained</b>. Every event, answer, and score on this page is illustrative sample data for the
+    <span class="mono">delivery_cam.mp4</span> scene. Scores are shown as <b>uncalibrated model scores</b>, never as
+    calibrated probabilities. When wired to the serving API, this same interface calls the real inference pipeline.
+  </footer>
+</div>
+
+<script>
+/* ===================================================================== *
+ * Viora Studio — front-end demo layer.
+ * A VioraClient abstraction speaks to either this deterministic mock
+ * engine (now) or the FastAPI /video/ask endpoint (once serving is up).
+ * All content below is illustrative sample data — see the footer.
+ * ===================================================================== */
+(function () {
+  "use strict";
+
+  let DURATION = 252; // seconds (mutable: real uploads set their own duration)
+  const fmt = (s) => {
+    s = Math.max(0, Math.round(s));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  };
+
+  // -------------------------------------------------- sample video index
+  const EVENTS = [
+    { s: 3,   e: 9,   imp: "low",  d: "Empty porch; low afternoon light falls across the door." },
+    { s: 22,  e: 31,  imp: "high", d: "A courier in a grey uniform walks up the path carrying a box." },
+    { s: 34,  e: 41,  imp: "high", d: "The courier sets the package down near the front door." },
+    { s: 44,  e: 49,  imp: "med",  d: "The courier photographs the package, then walks back down the path." },
+    { s: 72,  e: 80,  imp: "med",  d: "A small dog wanders into frame and sniffs the package." },
+    { s: 101, e: 107, imp: "med",  d: "The dog nudges the package a few inches away from the door." },
+    { s: 125, e: 130, imp: "low",  d: "The dog leaves the porch." },
+    { s: 158, e: 165, imp: "high", d: "The front door opens; a person in a red jacket steps out." },
+    { s: 167, e: 172, imp: "low",  d: "The person pauses and scans the street in both directions." },
+    { s: 175, e: 182, imp: "high", d: "The person picks up the package and checks the shipping label." },
+    { s: 200, e: 207, imp: "high", d: "The person carries the package inside and the door closes." },
+    { s: 238, e: 245, imp: "low",  d: "The porch is empty again; the light has shifted lower." },
+  ];
+
+  // curated Q&A — honest answers grounded in the events above
+  const PRESETS = [
+    {
+      label: "When did the package first appear?",
+      triggers: ["package first", "first appear", "package appear", "when did the package", "package arrive"],
+      answer: "A courier set the package down near the front door at **0:34**, about half a minute in. It first enters frame in the courier's hands at 0:22.",
+      evidence: [[34, 41], [22, 31]],
+      score: 0.78, used: [2, 1],
+    },
+    {
+      label: "What did the person do after opening the door?",
+      triggers: ["after opening", "after the door", "person do after", "after opening the door", "open the door"],
+      answer: "After stepping out at **2:38**, the person scanned the street, then picked up the package and checked its shipping label around **2:55**.",
+      evidence: [[175, 182], [158, 165]],
+      score: 0.72, used: [7, 8, 9],
+    },
+    {
+      label: "Did anyone come back to the package?",
+      triggers: ["come back", "return to the package", "return to it", "back to the package", "anyone return"],
+      answer: "Yes. The package sat untouched after the courier left — a dog nudged it around 1:41 — until the person came out and **picked it up at 2:55**, carrying it inside by 3:20.",
+      evidence: [[175, 182], [200, 207]],
+      score: 0.66, used: [9, 10],
+    },
+    {
+      label: "When does the red jacket first appear?",
+      triggers: ["red jacket", "red first", "red appear", "when does the red"],
+      answer: "The person in the red jacket first appears when the front door opens at **2:38**.",
+      evidence: [[158, 165]],
+      score: 0.74, used: [7],
+    },
+    {
+      label: "What happened to the package on the porch?",
+      triggers: ["happened to the package", "package on the porch", "dog", "package while", "package sit"],
+      answer: "While it waited on the porch, a small dog wandered up around **1:12** and nudged the package a few inches from the door at **1:41** before leaving.",
+      evidence: [[72, 80], [101, 107]],
+      score: 0.69, used: [4, 5],
+    },
+    {
+      label: "Summarize the delivery.",
+      triggers: ["summar", "what happens", "overview", "recap", "whole video"],
+      answer: "A courier delivers a package at **0:34** and leaves. A dog inspects it around 1:12. At **2:38** a person opens the door, retrieves the package at 2:55, and takes it inside by 3:20.",
+      evidence: [[34, 41], [158, 165], [175, 182], [200, 207]],
+      score: 0.7, used: [2, 7, 9, 10],
+    },
+  ];
+
+  const STAGES = [
+    "Adaptive sampling", "3D ViT", "Temporal attention",
+    "Event tokens", "Temporal memory", "Resampler", "Language model",
+  ];
+
+  // ---------------------------------------------------------------- state
+  const state = { t: 0, playing: false, evidence: [], usedEvents: [], mode: "sample", indexId: null };
+
+  const $ = (id) => document.getElementById(id);
+  const track = $("track"), playhead = $("playhead");
+  const evBand = $("evidence-band"), tip = $("tl-tip");
+  const player = $("player"), latent = $("latent");
+
+  // ------------------------------------------------------- build timeline
+  function pct(t) { return (t / DURATION) * 100; }
+
+  function buildMarks(items) {
+    const wrap = $("events-marks");
+    wrap.innerHTML = "";
+    (items || EVENTS).forEach((ev, i) => {
+      const m = document.createElement("div");
+      m.className = "ev-mark";
+      m.dataset.imp = ev.imp || "med";
+      m.dataset.i = i;
+      m.dataset.s = ev.s;
+      m.dataset.e = ev.e;
+      m.dataset.d = ev.d || "";
+      m.style.left = pct(ev.s) + "%";
+      m.style.width = Math.max(0.9, pct(ev.e - ev.s)) + "%";
+      wrap.appendChild(m);
+    });
+  }
+
+  function buildEventList() {
+    const list = $("ev-list");
+    list.innerHTML = "";
+    EVENTS.forEach((ev, i) => {
+      const li = document.createElement("li");
+      li.className = "ev-item";
+      li.dataset.i = i;
+      li.innerHTML =
+        '<span class="ev-time">' + fmt(ev.s) + "</span>" +
+        '<span class="ev-desc">' + ev.d + "</span>";
+      li.addEventListener("click", () => { setEvidence([[ev.s, ev.e]], [i]); seek(ev.s); });
+      list.appendChild(li);
+    });
+  }
+
+  function buildStages() {
+    const ol = $("stages");
+    ol.innerHTML = "";
+    STAGES.forEach((name, i) => {
+      const item = document.createElement("li");
+      item.className = "stage-item";
+      const chip = document.createElement("span");
+      chip.className = "stage-chip";
+      chip.dataset.i = i;
+      chip.innerHTML =
+        '<span class="stage-num mono">' + String(i + 1).padStart(2, "0") + "</span>" +
+        '<span class="stage-name">' + name + "</span>";
+      item.appendChild(chip);
+      if (i < STAGES.length - 1) {
+        const a = document.createElement("span");
+        a.className = "arrow"; a.textContent = "→";
+        item.appendChild(a);
+      }
+      ol.appendChild(item);
+    });
+  }
+
+  function buildPresets() {
+    const box = $("presets");
+    box.innerHTML = "";
+    PRESETS.slice(0, 4).forEach((p) => {
+      const b = document.createElement("button");
+      b.className = "preset";
+      b.type = "button";
+      b.textContent = p.label;
+      b.addEventListener("click", () => ask(p.label));
+      box.appendChild(b);
+    });
+  }
+
+  // --------------------------------------------------------- evidence/seek
+  function setEvidence(segments, used) {
+    state.evidence = segments || [];
+    state.usedEvents = used || [];
+    evBand.innerHTML = "";
+    state.evidence.forEach(([s, e]) => {
+      const b = document.createElement("div");
+      b.className = "evi-band";
+      b.style.left = pct(s) + "%";
+      b.style.width = Math.max(0.6, pct(e - s)) + "%";
+      evBand.appendChild(b);
+    });
+    // reflect in the event list + marks
+    document.querySelectorAll(".ev-item").forEach((el) => {
+      el.classList.toggle("active", state.usedEvents.includes(+el.dataset.i));
+    });
+    document.querySelectorAll(".ev-mark").forEach((el) => {
+      el.classList.toggle("lit", state.usedEvents.includes(+el.dataset.i));
+    });
+  }
+
+  function seek(t) {
+    state.t = Math.max(0, Math.min(DURATION, t));
+    if (state.mode === "live" && player.readyState) {
+      try { player.currentTime = state.t; } catch (_) { /* seeking not ready */ }
+    }
+    render();
+  }
+
+  function render() {
+    playhead.style.left = pct(state.t) + "%";
+    $("cur").textContent = fmt(state.t);
+    track.setAttribute("aria-valuenow", Math.round(state.t));
+  }
+
+  // -------------------------------------------------------- transport loop
+  let raf = null, last = 0;
+  function loop(ts) {
+    if (!state.playing) return;
+    if (!last) last = ts;
+    state.t += (ts - last) / 1000;
+    last = ts;
+    if (state.t >= DURATION) { state.t = DURATION; togglePlay(false); }
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+  function togglePlay(force) {
+    state.playing = typeof force === "boolean" ? force : !state.playing;
+    const icon = state.playing
+      ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    $("play").innerHTML = icon;
+    $("play").setAttribute("aria-label", state.playing ? "Pause" : "Play");
+    if (state.mode === "live") {
+      if (state.playing) player.play(); else player.pause();
+      return;  // the real <video> drives the playhead via 'timeupdate'
+    }
+    if (state.playing) { last = 0; raf = requestAnimationFrame(loop); }
+    else if (raf) cancelAnimationFrame(raf);
+  }
+
+  // -------------------------------------------------------- track pointer
+  function tFromEvent(clientX) {
+    const r = track.getBoundingClientRect();
+    return ((clientX - r.left) / r.width) * DURATION;
+  }
+  track.addEventListener("click", (e) => {
+    if (e.target.classList.contains("ev-mark")) {
+      const s = +e.target.dataset.s, en = +e.target.dataset.e;
+      setEvidence([[s, en]], [+e.target.dataset.i]); seek(s); return;
+    }
+    seek(tFromEvent(e.clientX));
+  });
+  track.addEventListener("mousemove", (e) => {
+    const m = e.target.closest(".ev-mark");
+    if (m) {
+      const s = +m.dataset.s, en = +m.dataset.e, d = m.dataset.d || "";
+      tip.innerHTML = "<time>" + fmt(s) + " → " + fmt(en) + "</time>" + d;
+      tip.classList.add("show");
+      const r = track.getBoundingClientRect();
+      let x = e.clientX - r.left + 12;
+      x = Math.min(x, r.width - 250);
+      tip.style.left = Math.max(6, x) + "px";
+      tip.style.top = "-6px";
+      tip.style.transform = "translateY(-100%)";
+    } else { tip.classList.remove("show"); }
+  });
+  track.addEventListener("mouseleave", () => tip.classList.remove("show"));
+  track.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") { seek(state.t + 5); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { seek(state.t - 5); e.preventDefault(); }
+  });
+
+  // ----------------------------------------------------------- mock engine
+  function retrieve(query) {
+    const q = query.toLowerCase();
+    // 1) intent match against curated Q&A
+    let best = null, bestScore = 0;
+    PRESETS.forEach((p) => {
+      let sc = 0;
+      p.triggers.forEach((t) => { if (q.includes(t)) sc += t.length; });
+      if (sc > bestScore) { bestScore = sc; best = p; }
+    });
+    if (best) return { ...best };
+    // 2) fallback: keyword retrieval over event descriptions
+    const words = q.replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 3);
+    const scored = EVENTS.map((ev, i) => {
+      const d = ev.d.toLowerCase();
+      const hits = words.reduce((n, w) => n + (d.includes(w) ? 1 : 0), 0);
+      return { i, ev, hits };
+    }).filter((x) => x.hits > 0).sort((a, b) => b.hits - a.hits).slice(0, 2);
+    if (!scored.length) {
+      return {
+        answer: "I couldn't find a moment in this clip that matches that. Try asking about the courier, the package, the dog, or the person in the red jacket.",
+        evidence: [], score: 0.0, used: [], empty: true,
+      };
+    }
+    return {
+      answer: "The closest moment is around **" + fmt(scored[0].ev.s) + "** — " +
+        scored[0].ev.d.charAt(0).toLowerCase() + scored[0].ev.d.slice(1),
+      evidence: scored.map((x) => [x.ev.s, x.ev.e]),
+      score: Math.min(0.62, 0.4 + scored[0].hits * 0.08),
+      used: scored.map((x) => x.i),
+      retrieval: true,
+    };
+  }
+
+  // ------------------------------------------------------------- rendering
+  const thread = $("thread");
+  function scrollThread() { thread.scrollTop = thread.scrollHeight; }
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function addQuestion(text) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg msg-q";
+    wrap.innerHTML = '<div class="bubble-q"></div>';
+    wrap.querySelector(".bubble-q").textContent = text;
+    thread.appendChild(wrap);
+    scrollThread();
+  }
+
+  function markup(text) {
+    return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  }
+
+  function addAnswer(res) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg msg-a";
+
+    const ans = document.createElement("div");
+    ans.className = "a-answer";
+    ans.innerHTML = markup(res.answer);
+    wrap.appendChild(ans);
+
+    if (res.evidence && res.evidence.length) {
+      const row = document.createElement("div");
+      row.className = "evidence-row";
+      res.evidence.forEach(([s, e]) => {
+        const c = document.createElement("button");
+        c.className = "evi-chip"; c.type = "button";
+        c.textContent = fmt(s) + " → " + fmt(e);
+        c.addEventListener("click", () => { setEvidence(res.evidence, res.used); seek(s); });
+        row.appendChild(c);
+      });
+      wrap.appendChild(row);
+
+      const meta = document.createElement("div");
+      meta.className = "a-meta";
+      const scorePct = Math.round(res.score * 100);
+      const kind = res.retrieval ? "retrieval score" : "uncalibrated model score";
+      meta.innerHTML =
+        '<span class="score">score ' + res.score.toFixed(2) +
+        '<span class="bar"><i style="width:' + scorePct + '%"></i></span>' +
+        '<span class="cal" title="This is an ' + kind + ', not a calibrated probability. The model is untrained; treat it as a relative confidence hint only.">' + kind + "</span></span>";
+      if (res.used && res.used.length) {
+        const eu = document.createElement("span");
+        eu.className = "events-used";
+        res.used.forEach((i) => {
+          const b = document.createElement("button");
+          b.className = "eu-chip"; b.type = "button";
+          b.textContent = fmt(EVENTS[i].s);
+          b.title = EVENTS[i].d;
+          b.addEventListener("click", () => { setEvidence([[EVENTS[i].s, EVENTS[i].e]], [i]); seek(EVENTS[i].s); });
+          eu.appendChild(b);
+        });
+        meta.appendChild(eu);
+      }
+      wrap.appendChild(meta);
+    }
+    thread.appendChild(wrap);
+    scrollThread();
+  }
+
+  // orchestrated "thinking" moment: pulse the pipeline stages, then answer
+  function runPipeline(done) {
+    if (reduce) { done(); return; }
+    const startMode = state.mode;
+    const chips = [...document.querySelectorAll(".stage-chip")];
+    const t = document.createElement("div");
+    t.className = "msg msg-a";
+    t.innerHTML = '<div class="thinking">Locating evidence<span class="dots"><i></i><i></i><i></i></span></div>';
+    thread.appendChild(t); scrollThread();
+    let i = 0;
+    const iv = setInterval(() => {
+      if (state.mode !== startMode) {  // an upload switched modes — abort this stale run
+        clearInterval(iv);
+        chips.forEach((c) => c.classList.remove("on"));
+        t.remove();
+        return;
+      }
+      chips.forEach((c) => c.classList.remove("on"));
+      if (i < chips.length) chips[i].classList.add("on");
+      i++;
+      if (i > chips.length) {
+        clearInterval(iv);
+        chips.forEach((c) => c.classList.remove("on"));
+        t.remove();
+        done();
+      }
+    }, 130);
+  }
+
+  function ask(text) {
+    text = (text || "").trim();
+    if (!text) return;
+    addQuestion(text);
+    if (state.mode === "live") { apiAsk(text); return; }  // real backend for uploaded videos
+    const res = retrieve(text);
+    runPipeline(() => {
+      addAnswer(res);
+      if (res.evidence && res.evidence.length) {
+        setEvidence(res.evidence, res.used);
+        seek(res.evidence[0][0]);
+      } else {
+        setEvidence([], []);
+      }
+    });
+  }
+
+  // ------------------------------------------------------------- latent view
+  function initCanvas() {
+    const cv = $("latent");
+    const ctx = cv.getContext("2d");
+    let w, h, dpr;
+    function resize() {
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      w = cv.clientWidth; h = cv.clientHeight;
+      cv.width = w * dpr; cv.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resize();
+    window.addEventListener("resize", resize);
+
+    const blobs = [
+      { hue: [126, 119, 255], x: 0.28, y: 0.4, r: 0.5, px: 0.00013, py: 0.00009, ph: 0 },
+      { hue: [79, 214, 232], x: 0.7, y: 0.58, r: 0.46, px: 0.00010, py: 0.00012, ph: 2 },
+      { hue: [96, 150, 236], x: 0.52, y: 0.32, r: 0.4, px: 0.00008, py: 0.00007, ph: 4 },
+    ];
+
+    function frame(ts) {
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#06070C";
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = "lighter";
+      blobs.forEach((b) => {
+        const t = reduce ? 0 : ts;
+        const cx = (b.x + Math.sin(t * b.px + b.ph) * 0.08) * w;
+        const cy = (b.y + Math.cos(t * b.py + b.ph) * 0.08) * h;
+        const rad = b.r * Math.min(w, h) * (reduce ? 1 : (0.95 + Math.sin(t * 0.0004 + b.ph) * 0.06));
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        const [r, gr, bl] = b.hue;
+        g.addColorStop(0, "rgba(" + r + "," + gr + "," + bl + ",0.42)");
+        g.addColorStop(1, "rgba(" + r + "," + gr + "," + bl + ",0)");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+      });
+      // warm bloom when evidence is active near the playhead
+      if (state.evidence.length) {
+        const cx = (0.5 + Math.sin((reduce ? 0 : ts) * 0.0006) * 0.05) * w;
+        const cy = 0.5 * h;
+        const rad = 0.5 * Math.min(w, h);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        g.addColorStop(0, "rgba(255,149,82,0.34)");
+        g.addColorStop(1, "rgba(255,149,82,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+      if (!reduce) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ------------------------------------------------- real upload + API mode
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function renderAxis() {
+    const axis = document.querySelector(".tl-axis");
+    axis.innerHTML = "";
+    for (let i = 0; i < 5; i++) {
+      const sp = document.createElement("span");
+      sp.textContent = fmt((DURATION * i) / 4);
+      axis.appendChild(sp);
+    }
+    track.setAttribute("aria-valuemax", Math.round(DURATION));
+  }
+
+  function buildLiveEventList(moments) {
+    const list = $("ev-list");
+    list.innerHTML = "";
+    moments.forEach((ev, i) => {
+      const li = document.createElement("li");
+      li.className = "ev-item";
+      li.dataset.i = i;
+      li.innerHTML = '<span class="ev-time">' + fmt(ev.s) + "</span>" +
+        '<span class="ev-desc">' + ev.d + "</span>";
+      li.addEventListener("click", () => { setEvidence([[ev.s, ev.e]], [i]); seek(ev.s); });
+      list.appendChild(li);
+    });
+  }
+
+  function showThinking(label) {
+    const t = document.createElement("div");
+    t.className = "msg msg-a";
+    t.innerHTML = '<div class="thinking">' + (label || "Analyzing video") +
+      '<span class="dots"><i></i><i></i><i></i></span></div>';
+    thread.appendChild(t); scrollThread();
+    return t;
+  }
+
+  async function apiAsk(text) {
+    const think = showThinking("Locating evidence");
+    try {
+      const r = await fetch("/video/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index_id: state.indexId, question: text, top_k: 3 }),
+      });
+      if (!r.ok) throw new Error("ask failed (" + r.status + ")");
+      const j = await r.json();
+      think.remove();
+      const evidence = (j.evidence || []).map((e) => [e.start, e.end]);
+      addAnswer({ answer: j.answer, evidence, score: j.score || 0, used: [], retrieval: true });
+      if (evidence.length) { setEvidence(evidence, []); seek(evidence[0][0]); }
+    } catch (err) {
+      think.remove();
+      addAnswer({ answer: "Couldn't reach the server (" + escapeHtml(err.message) +
+        "). Run: uvicorn viora.serving.api:app", evidence: [], score: 0, used: [], empty: true });
+    }
+  }
+
+  async function uploadVideo(file) {
+    // show the real video, retire the latent canvas
+    player.src = URL.createObjectURL(file);
+    player.hidden = false;
+    latent.style.display = "none";
+    $("file-name").textContent = file.name;
+    $("view-note").textContent = "Uploaded video · real inference";
+    state.mode = "live"; state.playing = false; state.indexId = null;
+    $("status").classList.add("live");
+    $("status").textContent = "live · uploaded · uncalibrated";
+    thread.innerHTML = "";
+    const note = showThinking("Indexing " + escapeHtml(file.name));
+
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const r = await fetch("/video/index", { method: "POST", body: fd });
+      if (!r.ok) throw new Error("index failed (" + r.status + ")");
+      const j = await r.json();
+      state.indexId = j.index_id;
+      DURATION = j.duration || player.duration || 1;
+      $("dur").textContent = fmt(DURATION);
+      renderAxis();
+
+      const ev = await fetch("/video/events", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index_id: state.indexId }),
+      });
+      if (ev.ok) {
+        const arr = (await ev.json()).moments || [];
+        const moments = arr.map((m, i) => {
+          const nxt = i + 1 < arr.length ? arr[i + 1].timestamp : DURATION;
+          return { s: m.timestamp, e: Math.min(nxt, m.timestamp + 0.6), imp: "med",
+                   d: "temporal token " + m.index };
+        });
+        buildMarks(moments);
+        buildLiveEventList(moments);
+        $("ev-count").textContent = moments.length + " tokens";
+      }
+      // generic presets for an arbitrary uploaded clip
+      const box = $("presets");
+      box.innerHTML = "";
+      ["What happens in this video?", "When does the scene change?",
+       "What is the most important moment?", "Describe the video."].forEach((q) => {
+        const b = document.createElement("button");
+        b.className = "preset"; b.type = "button"; b.textContent = q;
+        b.addEventListener("click", () => ask(q));
+        box.appendChild(b);
+      });
+      note.remove();
+      addAnswer({ answer: "Indexed **" + file.name + "** — " + DURATION.toFixed(1) +
+        "s. Ask a question below. (Model is untrained, so answers point to temporal evidence.)",
+        evidence: [], score: 0, used: [], empty: true });
+      setEvidence([], []); seek(0);
+    } catch (err) {
+      note.remove();
+      addAnswer({ answer: "Couldn't index the video (" + escapeHtml(err.message) +
+        "). Is the server running? Open this page via http://127.0.0.1:8000, not as a file.",
+        evidence: [], score: 0, used: [], empty: true });
+    }
+  }
+
+  // ------------------------------------------------------------------- init
+  buildMarks();
+  buildEventList();
+  buildStages();
+  buildPresets();
+  initCanvas();
+  render();
+
+  $("play").addEventListener("click", () => togglePlay());
+  $("composer").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $("q");
+    ask(input.value);
+    input.value = "";
+  });
+
+  // upload wiring
+  $("upload-btn").addEventListener("click", () => $("file-input").click());
+  $("file-input").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (f) uploadVideo(f);
+  });
+  player.addEventListener("timeupdate", () => {
+    if (state.mode === "live") { state.t = player.currentTime; render(); }
+  });
+  player.addEventListener("ended", () => togglePlay(false));
+
+  // open with the canonical question so the studio is alive on load
+  setTimeout(() => ask("When did the package first appear?"), reduce ? 0 : 600);
+})();
+</script>
