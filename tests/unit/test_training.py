@@ -152,6 +152,55 @@ def test_trainer_moves_batch_to_device(tmp_path):
     assert seen["called"] is True
 
 
+def test_checkpoint_pruning_keeps_last_k(tmp_path):
+    import glob
+
+    model = VioraForVideoUnderstanding(tiny_viora_config())
+    trainer = Trainer(model, _train_cfg(tmp_path, keep_last_checkpoints=2), device="cpu")
+    for s in (100, 200, 300):
+        trainer.step = s
+        trainer.save(f"step_{s}")
+    kept = sorted(p.rsplit("step_", 1)[1] for p in glob.glob(str(tmp_path / "step_*.pt")))
+    assert kept == ["200.pt", "300.pt"]                 # oldest pruned to bound disk
+    trainer.save("final")
+    assert (tmp_path / "final.pt").exists()             # 'final' is never pruned
+    assert (tmp_path / "step_300.pt").exists()
+
+
+def test_default_step_fn_computes_contrastive_when_weighted(tmp_path):
+    from viora.training.trainer import default_step_fn
+
+    model = VioraForVideoUnderstanding(tiny_viora_config())  # default weights include contrastive
+    assert model.loss_manager.weights.get("contrastive", 0) > 0
+    ds = SyntheticVideoDataset(size=2, num_frames=8, image_size=32)
+    batch = VideoTextCollator(tokenize_fn=_toy_tok)([ds[0], ds[1]])
+    out = default_step_fn(model, batch)
+    assert "contrastive" in out.losses                  # retrieval head actually gets a gradient
+
+
+def test_hf_tokenizer_appends_eos():
+    import sys
+    sys.path.insert(0, "scripts")
+    from train import hf_tokenize_fn
+
+    class _Tok:
+        eos_token = "<eos>"
+        def __call__(self, texts, **kw):
+            # record what was tokenized; emit 1 id per whitespace token
+            _Tok.seen = texts
+            rows = [[7] * len(t.split()) for t in texts]
+            n = max(len(r) for r in rows)
+            ids = torch.zeros(len(rows), n, dtype=torch.long)
+            attn = torch.zeros(len(rows), n, dtype=torch.long)
+            for i, r in enumerate(rows):
+                ids[i, :len(r)] = torch.tensor(r)
+                attn[i, :len(r)] = 1
+            return {"input_ids": ids, "attention_mask": attn}
+
+    hf_tokenize_fn(_Tok(), max_length=64)(["a caption"])
+    assert all(t.endswith("<eos>") for t in _Tok.seen)  # EOS appended so the model learns to stop
+
+
 @pytest.mark.parametrize(
     ("scale_before", "scale_after", "expect_steps"),
     [(65536.0, 65536.0, 1),   # no overflow -> optimizer stepped -> schedule advances

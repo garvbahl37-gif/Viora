@@ -59,6 +59,10 @@ class hf_tokenize_fn:
         self.max_length = max_length
 
     def __call__(self, texts: list[str]) -> dict:
+        # Append EOS so the target ends with a stop token — otherwise the model never learns
+        # to end generation and rambles at inference. EOS stays unmasked (a supervised label).
+        eos = self.tokenizer.eos_token or ""
+        texts = [t + eos for t in texts]
         enc = self.tokenizer(texts, padding=True, truncation=True, max_length=self.max_length,
                              return_tensors="pt")
         labels = enc["input_ids"].clone()

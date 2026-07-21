@@ -44,3 +44,41 @@ def test_decode_bytes_shape(tmp_path):
     video, ts = decode_video_bytes(data, num_frames=6)
     assert video.shape[0] == 3 and video.shape[1] == 6
     assert ts.shape[0] == 6
+
+
+def test_decoder_aborts_on_fully_broken_stream():
+    """A stream where every sample fails to decode must fail fast, not skip forever."""
+    import json
+
+    from viora.data.webdataset_pipeline import _StreamBroken, _VideoTextDecoder
+
+    dec = _VideoTextDecoder(num_frames=8, transform=None, max_consecutive_failures=5)
+    bad = (b"not-a-video", json.dumps({"captions": ["x"]}).encode())
+    for _ in range(4):                       # first failures are skippable (not the abort)
+        with pytest.raises(Exception) as ei:  # noqa: PT011
+            dec(bad)
+        assert not isinstance(ei.value, _StreamBroken)
+    with pytest.raises(_StreamBroken):        # 5th consecutive failure trips the abort
+        dec(bad)
+
+
+def test_decoder_failure_counter_resets_on_success():
+    import json
+
+    from viora.data.webdataset_pipeline import (
+        _StreamBroken,
+        _VideoTextDecoder,
+        tensor_to_mp4_bytes,
+    )
+
+    dec = _VideoTextDecoder(num_frames=8, transform=None, max_consecutive_failures=3)
+    bad = (b"xxx", json.dumps({}).encode())
+    good = (tensor_to_mp4_bytes(torch.rand(3, 8, 32, 32)),
+            json.dumps({"captions": ["a"]}).encode())
+    for _ in range(2):
+        with pytest.raises(Exception):  # noqa: PT011, B017
+            dec(bad)
+    dec(good)                                  # a success resets the consecutive counter
+    with pytest.raises(Exception) as ei:       # noqa: PT011
+        dec(bad)
+    assert not isinstance(ei.value, _StreamBroken)  # would have aborted at 3 without the reset

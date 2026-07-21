@@ -233,6 +233,7 @@ class TrainingConfig:
     log_every: int = 10
     eval_every: int = 0          # 0 disables periodic eval
     save_every: int = 500
+    keep_last_checkpoints: int = 3  # prune older step_*.pt (0 = keep all); 'final.pt' is never pruned
     resume: str = ""             # checkpoint path to resume from
     tensorboard: bool = False
 

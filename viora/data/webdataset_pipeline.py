@@ -98,22 +98,55 @@ def decode_video_bytes(
     return video, ts
 
 
+class _StreamBroken(RuntimeError):
+    """Raised when too many *consecutive* samples fail to decode — i.e. the whole
+    shard stream is broken (corrupt videos / wrong format), not just an odd bad clip.
+
+    With ``resampled=True`` (infinite) and warn-and-continue, a universally-broken
+    stream would otherwise skip every sample forever and hang training at 0 steps
+    with no error. This surfaces it instead.
+    """
+
+
 class _VideoTextDecoder:
     """Picklable decode step for WebDataset.
 
     Must be a module-level callable (not a local closure) so ``DataLoader`` with
-    ``num_workers > 0`` can pickle it to send to worker processes.
+    ``num_workers > 0`` can pickle it to send to worker processes. Tracks consecutive
+    decode failures (per worker) and aborts if the stream looks entirely broken.
     """
 
-    def __init__(self, num_frames: int, transform: Callable | None) -> None:
+    def __init__(
+        self, num_frames: int, transform: Callable | None, *, max_consecutive_failures: int = 100
+    ) -> None:
         self.num_frames = num_frames
         self.transform = transform
+        self.max_consecutive_failures = max_consecutive_failures
+        self._consecutive = 0
 
     def __call__(self, sample: tuple) -> dict:
-        data, meta_bytes = sample
-        meta = json.loads(meta_bytes)
-        video, ts = decode_video_bytes(data, self.num_frames, self.transform)
+        try:
+            data, meta_bytes = sample
+            meta = json.loads(meta_bytes)
+            video, ts = decode_video_bytes(data, self.num_frames, self.transform)
+        except Exception as e:  # noqa: BLE001 - classify: odd bad clip vs broken stream
+            self._consecutive += 1
+            if self._consecutive >= self.max_consecutive_failures:
+                raise _StreamBroken(
+                    f"{self._consecutive} consecutive shard samples failed to decode — the stream "
+                    "looks broken (corrupt videos or wrong format), not just an occasional bad clip."
+                ) from e
+            raise  # occasional bad clip: let the handler skip it and continue
+        self._consecutive = 0
         return {"video": video, "timestamps": ts, **meta}
+
+
+def _decode_stream_handler(exn: Exception) -> bool:
+    """Skip an occasional undecodable clip, but let a broken-stream abort propagate."""
+    if isinstance(exn, _StreamBroken):
+        raise exn
+    logger.warning("skipping undecodable shard sample: %s", exn)
+    return True
 
 
 def build_video_text_webdataset(
@@ -142,4 +175,4 @@ def build_video_text_webdataset(
     if shuffle:
         ds = ds.shuffle(shuffle)
     ds = ds.to_tuple("mp4", "json")
-    return ds.map(_VideoTextDecoder(num_frames, transform), handler=wds.warn_and_continue)
+    return ds.map(_VideoTextDecoder(num_frames, transform), handler=_decode_stream_handler)

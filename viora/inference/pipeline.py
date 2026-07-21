@@ -199,9 +199,13 @@ class VioraInferencePipeline:
             evidence.append(Evidence(lo, hi, float(g.confidence)))
 
         score = float(scores.max().clamp(0, 1)) if k else 0.0
-        trained = bool(self.model.llm.cfg.name_or_path) and not self.model.llm.cfg.dummy
+        trained = (
+            bool(self.model.llm.cfg.name_or_path)
+            and not self.model.llm.cfg.dummy
+            and self.model.llm.tokenizer is not None
+        )
         if trained:
-            answer = self._generate(index, question)
+            answer, _ = self.generate_answer(index, question, self.model.llm.tokenizer)
         else:
             best = evidence_segments[0] if evidence_segments else (0.0, index.duration)
             answer = (
@@ -214,23 +218,23 @@ class VioraInferencePipeline:
             diagnostics={"model_trained": trained, "retrieval": "cosine", "top_k": k},
         )
 
-    def _generate(self, index: VideoIndex, question: str) -> str:  # pragma: no cover - needs a real LLM
-        raise NotImplementedError("free-form generation needs a real LLM tokenizer; use generate_answer")
-
     @torch.no_grad()
     def generate_answer(
-        self, index: VideoIndex, question: str, tokenizer, *, max_new_tokens: int = 1
+        self, index: VideoIndex, question: str, tokenizer, *, max_new_tokens: int = 32
     ) -> tuple[str, float]:
         """Greedily decode the answer from a **trained** model given the video + question.
 
-        ``tokenizer`` must expose ``encode``/``decode`` and a ``video_token_id`` that
-        matches ``model.llm.video_token_id``. Returns ``(answer_text, confidence)``
-        where confidence is the (uncalibrated) softmax prob of the chosen token(s).
+        Builds the same ``<video>\\nQuestion: ...\\nAnswer:`` prompt used in training so the
+        visual tokens are injected at ``<video>`` and the model continues with the answer,
+        stopping at EOS. Returns ``(answer_text, confidence)`` where confidence is the
+        (uncalibrated) mean softmax prob of the chosen tokens.
         """
         emb = self.model.llm.get_input_embeddings()
         projected = self.model.projector(index.resampled.unsqueeze(0).to(self.device))  # [1,Q,D_llm]
-        ids = torch.tensor([tokenizer.encode(question)], device=self.device)
+        prompt = f"{self.model.llm.cfg.video_token}\nQuestion: {question}\nAnswer:"
+        ids = torch.tensor([tokenizer.encode(prompt)], device=self.device)
         prompt_len = ids.shape[1]
+        eos_id = getattr(tokenizer, "eos_token_id", None)
         confs: list[float] = []
         for _ in range(max_new_tokens):
             mm = build_multimodal_inputs(
@@ -242,8 +246,10 @@ class VioraInferencePipeline:
             conf, nxt = probs.max(-1)
             confs.append(float(conf))
             ids = torch.cat([ids, nxt.unsqueeze(1)], dim=1)
-        answer = tokenizer.decode(ids[0, prompt_len:].tolist())
-        return answer, sum(confs) / len(confs)
+            if eos_id is not None and int(nxt) == eos_id:
+                break
+        answer = tokenizer.decode(ids[0, prompt_len:].tolist(), skip_special_tokens=True).strip()
+        return answer, (sum(confs) / len(confs) if confs else 0.0)
 
     def index_and_ask(self, video_path: str | Path, question: str, **kw) -> VioraAnswer:
         return self.ask(self.index(video_path), question, **kw)

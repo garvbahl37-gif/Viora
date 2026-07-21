@@ -43,9 +43,14 @@ def default_step_fn(model: nn.Module, batch: Any):
         tok_mask = (
             batch.token_temporal_mask(stride) if batch.frame_mask is not None else None
         )
+        # Honour a configured contrastive weight: without this the retrieval head never
+        # trains, so served video-text/retrieval evidence stays at random init.
+        lm = getattr(core, "loss_manager", None)
+        want_contrastive = bool(lm) and lm.weights.get("contrastive", 0.0) > 0 and batch.input_ids is not None
         return core(
             batch.video, input_ids=batch.input_ids, attention_mask=batch.attention_mask,
             labels=batch.labels, timestamps=batch.timestamps, temporal_mask=tok_mask,
+            compute_contrastive=want_contrastive,
         )
     if isinstance(batch, dict):
         return core(**batch)
@@ -251,4 +256,25 @@ class Trainer:
             path, self.model, optimizer=self.optimizer, scheduler=self.scheduler,
             scaler=self.scaler, step=self.step, epoch=self.epoch, config=self.full_config,
         )
+        self._prune_checkpoints()
         return path
+
+    def _prune_checkpoints(self) -> None:
+        """Keep only the newest ``keep_last_checkpoints`` ``step_*.pt`` files.
+
+        Whole-model checkpoints are large (~GBs); on a capped disk (e.g. Kaggle's
+        20 GB) saving every N steps otherwise fills the disk and aborts the run.
+        ``final.pt`` and any non ``step_`` tag are never pruned.
+        """
+        keep = getattr(self.cfg, "keep_last_checkpoints", 0)
+        if not keep or keep < 1:
+            return
+        ckpts = sorted(
+            self.output_dir.glob("step_*.pt"),
+            key=lambda p: int(p.stem.split("_")[1]) if p.stem.split("_")[1].isdigit() else -1,
+        )
+        for old in ckpts[:-keep]:
+            try:
+                old.unlink()
+            except OSError:  # pragma: no cover - best-effort cleanup
+                logger.warning("could not remove old checkpoint %s", old)

@@ -54,9 +54,24 @@ def parse_msrvtt(annotations: str | Path, split: str | None = None) -> dict[str,
     ``videos[].split`` matches are kept.
     """
     data = json.loads(Path(annotations).read_text())
+    if not isinstance(data, Mapping):
+        raise ValueError(
+            f"MSR-VTT --annotations must be a JSON object with 'videos'/'sentences' "
+            f"(videodatainfo.json); got a top-level JSON {type(data).__name__}. "
+            "MSRVTT-QA *_qa.json and bare caption lists are not captioning input here — "
+            "point --annotations at videodatainfo.json, or convert to a {id: caption(s)} "
+            "sidecar and pass --format folder."
+        )
     keep: set[str] | None = None
     if split is not None:
-        keep = {v["video_id"] for v in data.get("videos", []) if v.get("split") == split}
+        videos = data.get("videos", [])
+        keep = {v["video_id"] for v in videos if v.get("split") == split}
+        if not keep and videos:
+            present = sorted({v.get("split") for v in videos})
+            raise ValueError(
+                f"--split {split!r} matched 0 clips. Splits present in this file: {present}. "
+                "MSR-VTT test files only contain 'test'; use train_val_videodatainfo.json for train."
+            )
     caps: dict[str, list[str]] = defaultdict(list)
     for s in data.get("sentences", []):
         vid = s.get("video_id")

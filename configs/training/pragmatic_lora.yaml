@@ -24,7 +24,10 @@ freeze_llm: false         # LoRA adapters train (base LLM frozen inside PEFT)
 num_workers: 8
 datasets: [msrvtt]        # start with one downloadable set; add nextqa/videoinstruct
 mixture_weights: {msrvtt: 1.0}
-loss_weights: {lm: 1.0, grounding: 0.5, contrastive: 0.5, order: 0.0}
+# grounding: 0 here — MSR-VTT/caption data has no temporal spans, so the grounding head
+# cannot be trained and its served "evidence" spans are not meaningful. Add a grounding
+# dataset (e.g. Charades-STA) to train it. lm = captioning/QA; contrastive trains retrieval.
+loss_weights: {lm: 1.0, grounding: 0.0, contrastive: 0.5, order: 0.0}
 
 log_every: 20
 eval_every: 1000

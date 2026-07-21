@@ -91,6 +91,26 @@ def test_build_caption_shards_end_to_end_msrvtt(tmp_path):
     assert "captions" in items[0]                          # meta carries reference captions
 
 
+def test_parse_msrvtt_rejects_top_level_list(tmp_path):
+    # MSRVTT-QA train_qa.json is a bare list, not a videodatainfo object -> clear error, not AttributeError
+    ann = tmp_path / "train_qa.json"
+    ann.write_text(json.dumps([{"question": "q", "answer": "a", "video_id": "video0"}]))
+    with pytest.raises(ValueError, match="top-level JSON"):
+        parse_msrvtt(ann)
+    with pytest.raises(ValueError, match="top-level JSON"):
+        parse_msrvtt(ann, split="train")
+
+
+def test_parse_msrvtt_empty_split_lists_present_splits(tmp_path):
+    ann = tmp_path / "test_videodatainfo.json"
+    ann.write_text(json.dumps({
+        "videos": [{"video_id": "video0", "split": "test"}],
+        "sentences": [{"video_id": "video0", "caption": "x"}],
+    }))
+    with pytest.raises(ValueError, match="Splits present"):
+        parse_msrvtt(ann, split="train")   # requested split absent -> explicit error
+
+
 def test_build_caption_shards_bad_ids_write_zero(tmp_path):
     _write_videos(tmp_path / "vids", ["video0"])
     ann = tmp_path / "caps.json"
