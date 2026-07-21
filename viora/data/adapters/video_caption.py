@@ -97,6 +97,77 @@ def parse_folder_sidecar(annotations: str | Path) -> dict[str, list[str]]:
     return caps
 
 
+_ID_KEYS = ("video_id", "clip_id", "image_id", "vid", "id")
+_CAP_KEYS = ("caption", "sentence", "text", "captions", "sentences")
+
+
+def parse_caption_records(annotations: str | Path) -> dict[str, list[str]]:
+    """Parse a top-level LIST of caption records into ``video_id -> [captions]``.
+
+    Handles the common 'expanded' caption format (one row per caption), e.g.
+    friedrichor/MSR-VTT's ``msrvtt_train_7k.json``:
+    ``[{"video_id": "video0", "caption": "..."}, ...]``. The id and caption keys
+    are auto-detected across a few common spellings (``_ID_KEYS`` / ``_CAP_KEYS``).
+    """
+    data = json.loads(Path(annotations).read_text())
+    if not isinstance(data, list):
+        raise ValueError(
+            f"--format records expects a top-level JSON list of caption records; got "
+            f"{type(data).__name__}. Use --format msrvtt (videodatainfo.json) or "
+            "--format folder ({id: caption} object)."
+        )
+    caps: dict[str, list[str]] = defaultdict(list)
+    for rec in data:
+        if not isinstance(rec, Mapping):
+            continue
+        vid = next((str(rec[k]) for k in _ID_KEYS if rec.get(k) is not None), None)
+        if vid is None:
+            continue
+        for ck in _CAP_KEYS:
+            val = rec.get(ck)
+            if not val:
+                continue
+            if isinstance(val, str):
+                caps[vid].append(val)
+            else:
+                caps[vid].extend(str(c) for c in val if c)
+            break
+    return dict(caps)
+
+
+def load_captions_auto(annotations: str | Path, split: str | None = None) -> dict[str, list[str]]:
+    """Detect the annotation shape and dispatch to the right parser.
+
+    * top-level list -> :func:`parse_caption_records`
+    * object with ``videos``/``sentences`` -> :func:`parse_msrvtt`
+    * any other object -> :func:`parse_folder_sidecar`
+    """
+    data = json.loads(Path(annotations).read_text())
+    if isinstance(data, list):
+        return parse_caption_records(annotations)
+    if isinstance(data, Mapping):
+        if "sentences" in data or "videos" in data:
+            return parse_msrvtt(annotations, split)
+        return parse_folder_sidecar(annotations)
+    raise ValueError(f"unsupported annotations JSON (top-level {type(data).__name__})")
+
+
+def _resolve_video(vid: str, video_index: dict[str, Path]) -> Path | None:
+    """Map a caption's clip id to a video file, tolerating id spelling differences.
+
+    Tries the id as-is and with ``.mp4``; if the id is bare digits (``"0"``), also
+    tries the ``videoN`` convention MSR-VTT files use.
+    """
+    for key in (vid, f"{vid}.mp4"):
+        if key in video_index:
+            return video_index[key]
+    if vid.isdigit():
+        for key in (f"video{vid}", f"video{vid}.mp4"):
+            if key in video_index:
+                return video_index[key]
+    return None
+
+
 def caption_shard_samples(
     captions: dict[str, list[str]],
     video_index: dict[str, Path],
@@ -113,7 +184,7 @@ def caption_shard_samples(
     for vid, caps in captions.items():
         if limit is not None and emitted >= limit:
             break
-        path = video_index.get(vid) or video_index.get(f"{vid}.mp4")
+        path = _resolve_video(vid, video_index)
         if path is None:
             missing += 1
             continue
@@ -155,12 +226,16 @@ def build_caption_shards(
             f"no video files ({', '.join(VIDEO_EXTS)}) found under {videos_dir}"
         )
 
-    if fmt == "msrvtt":
+    if fmt == "auto":
+        captions = load_captions_auto(annotations, split)
+    elif fmt == "msrvtt":
         captions = parse_msrvtt(annotations, split)
+    elif fmt == "records":
+        captions = parse_caption_records(annotations)
     elif fmt == "folder":
         captions = parse_folder_sidecar(annotations)
     else:
-        raise ValueError(f"unknown fmt '{fmt}' (expected 'msrvtt' or 'folder')")
+        raise ValueError(f"unknown fmt '{fmt}' (expected auto|msrvtt|records|folder)")
     if not captions:
         raise ValueError("no captions parsed from annotations (check --format / --split)")
 

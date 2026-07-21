@@ -16,6 +16,8 @@ from viora.data.adapters.video_caption import (  # noqa: E402
     build_caption_shards,
     caption_shard_samples,
     index_video_files,
+    load_captions_auto,
+    parse_caption_records,
     parse_folder_sidecar,
     parse_msrvtt,
 )
@@ -117,3 +119,50 @@ def test_build_caption_shards_bad_ids_write_zero(tmp_path):
     ann.write_text(json.dumps({"does_not_exist": "nope"}))   # id has no matching file
     n = build_caption_shards(tmp_path / "vids", ann, str(tmp_path / "t-%06d.tar"), fmt="folder")
     assert n == 0
+
+
+def test_parse_caption_records_groups_expanded_list(tmp_path):
+    # friedrichor/MSR-VTT shape: one row per caption, video_id repeated
+    ann = tmp_path / "msrvtt_train_7k.json"
+    ann.write_text(json.dumps([
+        {"video_id": "video0", "caption": "a cat"},
+        {"video_id": "video0", "caption": "a small cat"},
+        {"video_id": "video1", "caption": "a dog"},
+    ]))
+    caps = parse_caption_records(ann)
+    assert caps["video0"] == ["a cat", "a small cat"] and caps["video1"] == ["a dog"]
+
+
+def test_load_captions_auto_dispatches_by_shape(tmp_path):
+    lst = tmp_path / "records.json"
+    lst.write_text(json.dumps([{"video_id": "v0", "caption": "c"}]))
+    assert load_captions_auto(lst) == {"v0": ["c"]}
+
+    vdi = tmp_path / "videodatainfo.json"
+    vdi.write_text(json.dumps({"videos": [{"video_id": "v0", "split": "train"}],
+                               "sentences": [{"video_id": "v0", "caption": "c"}]}))
+    assert load_captions_auto(vdi, split="train") == {"v0": ["c"]}
+
+    side = tmp_path / "sidecar.json"
+    side.write_text(json.dumps({"v0": ["c1", "c2"]}))
+    assert load_captions_auto(side) == {"v0": ["c1", "c2"]}
+
+
+def test_resolve_video_handles_numeric_ids(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1"])
+    idx = index_video_files(tmp_path / "vids")
+    # a records file keyed by bare integers still resolves to videoN.mp4
+    caps = {"0": ["c0"], "1": ["c1"]}
+    out = list(caption_shard_samples(caps, idx))
+    assert {s["meta"]["video_id"] for s in out} == {"0", "1"} and len(out) == 2
+
+
+def test_build_caption_shards_auto_records_end_to_end(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1"])
+    ann = tmp_path / "records.json"
+    ann.write_text(json.dumps([
+        {"video_id": "video0", "caption": "a cat plays"},
+        {"video_id": "video1", "caption": "a dog runs"},
+    ]))
+    n = build_caption_shards(tmp_path / "vids", ann, str(tmp_path / "r-%06d.tar"), fmt="auto")
+    assert n == 2

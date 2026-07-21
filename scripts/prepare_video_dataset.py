@@ -30,7 +30,9 @@ def main() -> int:
     ap.add_argument("--videos", required=True, help="directory of video files (searched recursively)")
     ap.add_argument("--annotations", required=True,
                     help="MSR-VTT videodatainfo.json, or a {id: caption(s)} sidecar for --format folder")
-    ap.add_argument("--format", choices=["msrvtt", "folder"], default="msrvtt")
+    ap.add_argument("--format", choices=["auto", "msrvtt", "records", "folder"], default="auto",
+                    help="auto-detect (default); msrvtt=videodatainfo.json; "
+                         "records=list of {video_id, caption}; folder={id: caption(s)} object")
     ap.add_argument("--split", default=None, help="MSR-VTT split filter: train | validate | test")
     ap.add_argument("--out", required=True, help="printf pattern, e.g. data/shards/msrvtt-train-%%06d.tar")
     ap.add_argument("--maxcount", type=int, default=500, help="clips per shard")
