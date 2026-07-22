@@ -51,6 +51,18 @@ def test_ask_returns_evidence_and_score_type():
     assert ans.diagnostics["model_trained"] is False  # honest labeling
 
 
+def test_caption_requires_real_tokenizer():
+    # the tiny config uses a dummy LLM (no tokenizer) -> caption() must fail clearly,
+    # not produce garbage; real captioning needs a trained non-dummy model.
+    pipe = VioraInferencePipeline(_model(), device="cpu")
+    idx = VideoIndex(
+        resampled=torch.randn(6, 32), event_tokens=torch.randn(4, 32),
+        temporal=torch.randn(6, 32), timestamps=torch.linspace(0, 4, 6), duration=4.0,
+    )
+    with pytest.raises(RuntimeError, match="tokenizer"):
+        pipe.caption(idx)
+
+
 @requires_ffmpeg
 def test_index_real_video(tmp_path):
     video = tmp_path / "t.mp4"

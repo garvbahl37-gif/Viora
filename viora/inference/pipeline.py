@@ -219,19 +219,16 @@ class VioraInferencePipeline:
         )
 
     @torch.no_grad()
-    def generate_answer(
-        self, index: VideoIndex, question: str, tokenizer, *, max_new_tokens: int = 32
+    def _greedy_decode(
+        self, index: VideoIndex, prompt: str, tokenizer, max_new_tokens: int
     ) -> tuple[str, float]:
-        """Greedily decode the answer from a **trained** model given the video + question.
+        """Inject the video at ``<video>`` and greedily continue ``prompt`` to EOS.
 
-        Builds the same ``<video>\\nQuestion: ...\\nAnswer:`` prompt used in training so the
-        visual tokens are injected at ``<video>`` and the model continues with the answer,
-        stopping at EOS. Returns ``(answer_text, confidence)`` where confidence is the
-        (uncalibrated) mean softmax prob of the chosen tokens.
+        Returns ``(text, confidence)`` where confidence is the (uncalibrated) mean
+        softmax prob of the chosen tokens.
         """
         emb = self.model.llm.get_input_embeddings()
         projected = self.model.projector(index.resampled.unsqueeze(0).to(self.device))  # [1,Q,D_llm]
-        prompt = f"{self.model.llm.cfg.video_token}\nQuestion: {question}\nAnswer:"
         ids = torch.tensor([tokenizer.encode(prompt)], device=self.device)
         prompt_len = ids.shape[1]
         eos_id = getattr(tokenizer, "eos_token_id", None)
@@ -248,8 +245,29 @@ class VioraInferencePipeline:
             ids = torch.cat([ids, nxt.unsqueeze(1)], dim=1)
             if eos_id is not None and int(nxt) == eos_id:
                 break
-        answer = tokenizer.decode(ids[0, prompt_len:].tolist(), skip_special_tokens=True).strip()
-        return answer, (sum(confs) / len(confs) if confs else 0.0)
+        text = tokenizer.decode(ids[0, prompt_len:].tolist(), skip_special_tokens=True).strip()
+        return text, (sum(confs) / len(confs) if confs else 0.0)
+
+    @torch.no_grad()
+    def generate_answer(
+        self, index: VideoIndex, question: str, tokenizer, *, max_new_tokens: int = 32
+    ) -> tuple[str, float]:
+        """Greedily decode an answer from a **trained** model (QA prompt used in training)."""
+        prompt = f"{self.model.llm.cfg.video_token}\nQuestion: {question}\nAnswer:"
+        return self._greedy_decode(index, prompt, tokenizer, max_new_tokens)
+
+    @torch.no_grad()
+    def caption(self, index: VideoIndex, *, max_new_tokens: int = 40) -> tuple[str, float]:
+        """Greedily decode a caption, matching the ``<video>\\n{caption}`` training format.
+
+        This is the right entry point for a model trained on captions (e.g. MSR-VTT);
+        ``generate_answer`` uses the QA prompt instead.
+        """
+        tok = getattr(self.model.llm, "tokenizer", None)
+        if tok is None:
+            raise RuntimeError("caption() needs a real LLM tokenizer (train a non-dummy model)")
+        prompt = f"{self.model.llm.cfg.video_token}\n"
+        return self._greedy_decode(index, prompt, tok, max_new_tokens)
 
     def index_and_ask(self, video_path: str | Path, question: str, **kw) -> VioraAnswer:
         return self.ask(self.index(video_path), question, **kw)
