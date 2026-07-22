@@ -70,6 +70,32 @@ def test_checkpoint_round_trip(tmp_path):
         assert torch.allclose(p, q)
 
 
+def test_export_trained_weights_shrinks_and_reloads(tmp_path):
+    from viora.training.checkpointing import export_trained_weights
+
+    cfg = tiny_viora_config()
+    model = VioraForVideoUnderstanding(cfg)
+    for p in model.vision.parameters():   # freeze a chunk -> frozen/trainable split
+        p.requires_grad_(False)
+    full = tmp_path / "full.pt"
+    save_checkpoint(full, model, step=5)
+
+    out = tmp_path / "trained.pt"
+    kept, total = export_trained_weights(model, full, out)
+    assert kept < total                                    # frozen params dropped
+    assert out.stat().st_size < full.stat().st_size        # genuinely smaller
+
+    fresh = VioraForVideoUnderstanding(cfg)
+    for p in fresh.vision.parameters():   # same frozen split as training (config does this for real)
+        p.requires_grad_(False)
+    load_checkpoint(out, fresh, strict=False)              # loads trained subset, frozen from init
+    # the exported (trainable) params match the source model
+    src = dict(model.named_parameters())
+    for n, p in fresh.named_parameters():
+        if p.requires_grad:
+            assert torch.allclose(p, src[n])
+
+
 def test_checkpoint_architecture_mismatch_raises(tmp_path):
     a = VioraForVideoUnderstanding(tiny_viora_config())
     path = tmp_path / "a.pt"

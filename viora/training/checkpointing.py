@@ -54,6 +54,28 @@ def save_checkpoint(
     logger.info("saved checkpoint -> %s (step %d)", path, step)
 
 
+def export_trained_weights(
+    model: nn.Module, checkpoint_path: str | Path, out_path: str | Path,
+    *, map_location: str = "cpu",
+) -> tuple[int, int]:
+    """Write a small checkpoint containing only the model's **trainable** params.
+
+    A full checkpoint also stores the frozen backbones (SigLIP + LLM base) and
+    optimizer state — GBs. For inference/sharing you only need the trained params
+    (LoRA + bridge + heads); the frozen base reloads from its pretrained source.
+    Reload with ``load_checkpoint(out_path, model, strict=False)``. Returns
+    ``(kept, total)`` tensor counts.
+    """
+    trainable = {n for n, p in model.named_parameters() if p.requires_grad}
+    ckpt = torch.load(checkpoint_path, map_location=map_location, weights_only=False)  # noqa: S614 - self-produced
+    sd = ckpt.get("model", ckpt)
+    small = {k: v for k, v in sd.items() if k in trainable}
+    torch.save(
+        {"model": small, "trainable_only": True, "config": ckpt.get("config")}, out_path
+    )
+    return len(small), len(sd)
+
+
 def load_checkpoint(
     path: str | Path,
     model: nn.Module,
