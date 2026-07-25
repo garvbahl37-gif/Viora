@@ -49,7 +49,13 @@ def save_checkpoint(
         "extra": extra or {},
     }
     tmp = path.with_suffix(path.suffix + ".tmp")
-    torch.save(ckpt, tmp)
+    try:
+        torch.save(ckpt, tmp)
+    except BaseException:
+        # A failed write (e.g. disk full mid-write) leaves a partial .tmp file that would
+        # otherwise sit there forever wasting disk space -- clean it up before re-raising.
+        tmp.unlink(missing_ok=True)
+        raise
     tmp.replace(path)  # atomic swap so a crash mid-write can't corrupt the file
     logger.info("saved checkpoint -> %s (step %d)", path, step)
 

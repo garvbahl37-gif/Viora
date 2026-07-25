@@ -49,6 +49,30 @@ def test_scheduler_warmup_then_decay(tmp_path):
     assert lrs[-1] < lrs[3]         # decaying after peak
 
 
+def test_save_checkpoint_cleans_up_tmp_file_on_write_failure(tmp_path, monkeypatch):
+    """Regression: a failed torch.save (e.g. disk full mid-write) must not leave a
+    partial .tmp file behind forever -- it should be removed, and the original
+    failure re-raised (not swallowed)."""
+    import torch as torch_mod
+
+    model = VioraForVideoUnderstanding(tiny_viora_config())
+    path = tmp_path / "step_1.pt"
+
+    def _boom(obj, f, *a, **k):
+        # simulate torch.save actually starting to write before failing mid-write
+        # (a real disk-full error happens after SOME bytes are already on disk)
+        with open(f, "wb") as fh:
+            fh.write(b"partial-checkpoint-bytes")
+        raise RuntimeError("simulated disk-full mid-write")
+
+    monkeypatch.setattr(torch_mod, "save", _boom)
+    with pytest.raises(RuntimeError, match="simulated disk-full"):
+        save_checkpoint(path, model, step=1)
+
+    assert not path.with_suffix(".pt.tmp").exists()   # partial file was cleaned up
+    assert not path.exists()                           # and no corrupt final file either
+
+
 def test_checkpoint_round_trip(tmp_path):
     cfg = tiny_viora_config()
     model = VioraForVideoUnderstanding(cfg)
