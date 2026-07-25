@@ -83,6 +83,12 @@ def set_rng_states(states: dict) -> None:
     if "numpy" in states:
         np.random.set_state(states["numpy"])
     if _HAS_TORCH and "torch" in states:
-        torch.set_rng_state(states["torch"])
+        # torch.set_rng_state() requires a CPU ByteTensor specifically. Trainer._resume
+        # loads checkpoints with map_location=<training device>; torch.load relocates
+        # EVERY tensor in the pickle to that device -- including this CPU-only RNG
+        # state -- so on a CUDA resume it arrives as a CUDA tensor and set_rng_state
+        # raises "RNG state must be a torch.ByteTensor". Force it back to CPU; CUDA RNG
+        # state is restored separately via torch_cuda below.
+        torch.set_rng_state(states["torch"].cpu())
         if "torch_cuda" in states and torch.cuda.is_available():
             torch.cuda.set_rng_state_all(states["torch_cuda"])
