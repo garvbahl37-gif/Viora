@@ -91,4 +91,6 @@ def set_rng_states(states: dict) -> None:
         # state is restored separately via torch_cuda below.
         torch.set_rng_state(states["torch"].cpu())
         if "torch_cuda" in states and torch.cuda.is_available():
-            torch.cuda.set_rng_state_all(states["torch_cuda"])
+            # Same map_location relocation problem, per-GPU: torch.cuda.set_rng_state_all()
+            # also requires each per-device state to be a CPU ByteTensor internally.
+            torch.cuda.set_rng_state_all([s.cpu() for s in states["torch_cuda"]])
