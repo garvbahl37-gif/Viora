@@ -85,6 +85,12 @@ def main() -> int:
     ap.add_argument("--smoke", action="store_true", help="tiny synthetic-data smoke run")
     ap.add_argument("--shards", help="WebDataset shard pattern for REAL training, "
                                      "e.g. 'data/shards/train-{000000..000099}.tar'")
+    ap.add_argument("--val-shards", default=None,
+                    help="optional WebDataset shard pattern for periodic validation "
+                         "(logs val_loss every training.eval_every steps)")
+    ap.add_argument("--qa-prob", type=float, default=0.5,
+                    help="chance a video with BOTH captions and QA pairs renders as a "
+                         "Question/Answer view instead of a caption (default 0.5)")
     ap.add_argument("--device", default=None,
                     help="cpu|cuda|mps|auto (default: auto; cpu for --smoke). Use cpu on Macs "
                          "where the pretrained-vision path hits MPS conv issues.")
@@ -121,6 +127,7 @@ def main() -> int:
     model = VioraForVideoUnderstanding(model_cfg)
     collator = VideoTextCollator()
 
+    val_loader = None
     if args.shards:
         # REAL training from sharded video-text data with the real LLM tokenizer.
         from viora.data.webdataset_pipeline import build_video_text_webdataset
@@ -128,11 +135,23 @@ def main() -> int:
         if model.llm.tokenizer is None:
             raise SystemExit("--shards needs a real LLM (set llm.dummy=false in the model config)")
         collator.tokenize_fn = hf_tokenize_fn(model.llm.tokenizer, model_cfg.llm.max_length)
+        collator.qa_prob = args.qa_prob
         ds = build_video_text_webdataset(
             args.shards, num_frames=model_cfg.vision.num_frames, transform=_transform_for(model_cfg)
         )
         loader = DataLoader(ds, batch_size=train_cfg.batch_size, collate_fn=collator,
                             num_workers=train_cfg.num_workers)
+        if args.val_shards:
+            val_collator = VideoTextCollator(
+                tokenize_fn=hf_tokenize_fn(model.llm.tokenizer, model_cfg.llm.max_length),
+                qa_prob=args.qa_prob,
+            )
+            val_ds = build_video_text_webdataset(
+                args.val_shards, num_frames=model_cfg.vision.num_frames,
+                transform=_transform_for(model_cfg), resampled=False, shuffle=0,
+            )
+            val_loader = DataLoader(val_ds, batch_size=train_cfg.batch_size, collate_fn=val_collator,
+                                    num_workers=train_cfg.num_workers)
     else:
         ds = SyntheticVideoDataset(
             size=32, num_frames=model_cfg.vision.num_frames, image_size=model_cfg.vision.image_size
@@ -144,7 +163,7 @@ def main() -> int:
     # tiny smoke runs on CPU (fast, and avoids MPS Conv3d gaps); real runs auto-select
     device = "cpu" if args.smoke else args.device
     trainer = Trainer(model, train_cfg, device=device, full_config=model_cfg)
-    summary = trainer.train(loader)
+    summary = trainer.train(loader, val_loader=val_loader)
     print("final metrics:", {k: round(v, 4) for k, v in summary.items()})
     return 0
 
