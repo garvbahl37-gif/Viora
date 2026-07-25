@@ -150,8 +150,15 @@ def main() -> int:
                 args.val_shards, num_frames=model_cfg.vision.num_frames,
                 transform=_transform_for(model_cfg), resampled=False, shuffle=0,
             )
+            # num_workers=0 (not train_cfg.num_workers): unlike the training stream
+            # (resampled=True, samples shards with replacement -- tolerant of fewer
+            # shards than workers), this is a deterministic single pass over a small
+            # validation set. With shuffle=0/resampled=False, WebDataset splits shards
+            # across worker processes; a worker assigned zero shards (val sets are
+            # often just 1-2 shards) raises "No samples found in dataset". Single-
+            # process loading sidesteps this regardless of how many val shards exist.
             val_loader = DataLoader(val_ds, batch_size=train_cfg.batch_size, collate_fn=val_collator,
-                                    num_workers=train_cfg.num_workers)
+                                    num_workers=0)
     else:
         ds = SyntheticVideoDataset(
             size=32, num_frames=model_cfg.vision.num_frames, image_size=model_cfg.vision.image_size
