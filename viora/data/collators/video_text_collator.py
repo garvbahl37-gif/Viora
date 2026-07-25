@@ -63,9 +63,11 @@ class VideoTextCollator:
         tokenize_fn: Callable[[list[str]], dict] | None = None,
         *,
         pad_value: float = 0.0,
+        qa_prob: float = 0.5,
     ) -> None:
         self.tokenize_fn = tokenize_fn
         self.pad_value = pad_value
+        self.qa_prob = qa_prob  # when a video has BOTH captions and qa, chance of rendering QA
 
     def __call__(self, items: list[dict]) -> VideoTextBatch:
         b = len(items)
@@ -94,12 +96,20 @@ class VideoTextCollator:
         meta = [{k: v for k, v in it.items() if k not in ("video", "timestamps")} for it in items]
         return VideoTextBatch(video, frame_mask, timestamps, input_ids, attention_mask, labels, meta)
 
-    @staticmethod
-    def _format_text(it: dict) -> str:
+    def _format_text(self, it: dict) -> str:
         q, a = it.get("question"), it.get("answer")
         if q and a:
             return f"<video>\nQuestion: {q}\nAnswer: {a}"
-        caps = it.get("captions")  # multiple reference captions per clip (e.g. MSR-VTT)
+        caps = it.get("captions")          # multiple reference captions (e.g. MSR-VTT)
+        qa_pairs = it.get("qa")            # multiple (question, answer) pairs (e.g. MSRVTT-QA)
+        if caps and qa_pairs:
+            if random.random() < self.qa_prob:
+                qq, aa = random.choice(qa_pairs)
+                return f"<video>\nQuestion: {qq}\nAnswer: {aa}"
+            return f"<video>\n{random.choice(caps)}"
+        if qa_pairs:
+            qq, aa = random.choice(qa_pairs)
+            return f"<video>\nQuestion: {qq}\nAnswer: {aa}"
         if caps:
             return f"<video>\n{random.choice(caps)}"  # sample one per view (augmentation)
         if it.get("caption"):

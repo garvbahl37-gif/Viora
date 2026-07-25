@@ -115,7 +115,7 @@ def test_collator_pads_and_masks_variable_lengths():
 
 
 def test_collator_formats_text_variants():
-    fmt = VideoTextCollator._format_text
+    fmt = VideoTextCollator()._format_text
     assert fmt({"question": "what?", "answer": "a cat"}) == "<video>\nQuestion: what?\nAnswer: a cat"
     assert fmt({"caption": "a dog runs"}) == "<video>\na dog runs"
     assert fmt({}) == "<video>\n"
@@ -123,6 +123,36 @@ def test_collator_formats_text_variants():
     caps = ["a", "b", "c"]
     out = fmt({"captions": caps})
     assert out.startswith("<video>\n") and out.split("\n", 1)[1] in caps
+
+
+def test_collator_formats_qa_pairs():
+    fmt = VideoTextCollator()._format_text
+    out = fmt({"qa": [["what color", "red"], ["how many", "two"]]})
+    assert out.startswith("<video>\nQuestion: ") and "\nAnswer: " in out
+    # the rendered pair must be one of the two supplied, not a mismatch
+    assert out in (
+        "<video>\nQuestion: what color\nAnswer: red",
+        "<video>\nQuestion: how many\nAnswer: two",
+    )
+
+
+def test_collator_qa_prob_extremes_with_both_present():
+    item = {"captions": ["a cat plays"], "qa": [["what animal", "a cat"]]}
+
+    always_qa = VideoTextCollator(qa_prob=1.0)
+    for _ in range(20):
+        assert always_qa._format_text(item).startswith("<video>\nQuestion: ")
+
+    always_caption = VideoTextCollator(qa_prob=0.0)
+    for _ in range(20):
+        assert always_caption._format_text(item) == "<video>\na cat plays"
+
+
+def test_collator_qa_only_ignores_qa_prob():
+    # only `qa` present (no captions) -> must always render as QA regardless of qa_prob
+    item = {"qa": [["q", "a"]]}
+    for prob in (0.0, 0.5, 1.0):
+        assert VideoTextCollator(qa_prob=prob)._format_text(item) == "<video>\nQuestion: q\nAnswer: a"
 
 
 # ------------------------------------------------------------- preprocessing
