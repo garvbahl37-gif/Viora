@@ -128,6 +128,12 @@ python scripts/prepare_video_dataset.py \
 python scripts/prepare_video_dataset.py \
   --videos /data/clips --annotations captions.json \
   --format folder --out data/shards/train-%06d.tar
+
+# combined captions + MSRVTT-QA (one shard set, both tasks; reuses the SAME videos)
+python scripts/prepare_video_dataset.py \
+  --videos /data/msrvtt/TrainValVideo --annotations /data/msrvtt/train_val_videodatainfo.json \
+  --qa-annotations /data/msrvtt/train_qa.json --format msrvtt --split train \
+  --out data/shards/msrvtt-mixed-%06d.tar
 ```
 
 The adapter (`viora/data/adapters/video_caption.py`) stores raw mp4 bytes once per clip
