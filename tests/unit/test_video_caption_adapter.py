@@ -189,6 +189,31 @@ def test_parse_qa_records_accepts_q_a_key_spelling(tmp_path):
     assert parse_qa_records(ann) == {"video0": [("who is this", "a man")]}
 
 
+def test_parse_qa_records_handles_real_lavis_msrvtt_qa_schema(tmp_path):
+    # verified live schema at storage.googleapis.com/sfr-vision-language-research/
+    # LAVIS/datasets/msrvtt/qa_train.json: id key is "video", value carries ".mp4"
+    ann = tmp_path / "qa_train.json"
+    ann.write_text(json.dumps([
+        {"answer": "man", "question": "who drives down the road?", "answer_type": "who",
+         "question_id": "0000000", "dataset": "msrvtt", "video": "video0.mp4"},
+        {"answer": "car", "question": "what is a man driving?", "answer_type": "what",
+         "question_id": "0000001", "dataset": "msrvtt", "video": "video0.mp4"},
+    ]))
+    qa = parse_qa_records(ann)
+    # normalized to the bare id (no ".mp4"), matching how caption sources key the same video
+    assert qa == {"video0": [("who drives down the road?", "man"), ("what is a man driving?", "car")]}
+
+
+def test_parse_qa_records_and_parse_caption_records_agree_on_ids_with_and_without_ext(tmp_path):
+    # a caption source keyed "video0" and a QA source keyed "video0.mp4" must produce the
+    # SAME dict key, or merged_shard_samples would treat them as two different videos.
+    cap_ann = tmp_path / "captions.json"
+    cap_ann.write_text(json.dumps([{"video_id": "video0", "caption": "a cat plays"}]))
+    qa_ann = tmp_path / "qa.json"
+    qa_ann.write_text(json.dumps([{"video": "video0.mp4", "question": "q", "answer": "a"}]))
+    assert set(parse_caption_records(cap_ann)) == set(parse_qa_records(qa_ann)) == {"video0"}
+
+
 def test_parse_qa_records_rejects_top_level_object(tmp_path):
     ann = tmp_path / "not_a_list.json"
     ann.write_text(json.dumps({"video0": "not a qa record"}))

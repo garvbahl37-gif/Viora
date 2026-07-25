@@ -32,6 +32,23 @@ logger = get_logger(__name__)
 VIDEO_EXTS = (".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".gif")
 
 
+def _strip_video_ext(vid: str) -> str:
+    """Strip a trailing known video extension from a parsed id, if present.
+
+    Different annotation sources key the SAME video differently: MSR-VTT captions
+    use a bare id (``"video0"``), while the official MSRVTT-QA json
+    (Salesforce LAVIS) uses a ``"video"`` key holding the filename
+    (``"video0.mp4"``). Without normalizing both to the same bare form,
+    :func:`merged_shard_samples` would treat them as two different videos and
+    write each one twice, defeating the "store each clip once" design.
+    """
+    low = vid.lower()
+    for ext in VIDEO_EXTS:
+        if low.endswith(ext):
+            return vid[: -len(ext)]
+    return vid
+
+
 def index_video_files(videos_dir: str | Path) -> dict[str, Path]:
     """Map every video file under ``videos_dir`` by both its name and stem.
 
@@ -97,7 +114,7 @@ def parse_folder_sidecar(annotations: str | Path) -> dict[str, list[str]]:
     return caps
 
 
-_ID_KEYS = ("video_id", "clip_id", "image_id", "vid", "id")
+_ID_KEYS = ("video_id", "clip_id", "image_id", "vid", "id", "video")
 _CAP_KEYS = ("caption", "sentence", "text", "captions", "sentences")
 
 
@@ -123,6 +140,7 @@ def parse_caption_records(annotations: str | Path) -> dict[str, list[str]]:
         vid = next((str(rec[k]) for k in _ID_KEYS if rec.get(k) is not None), None)
         if vid is None:
             continue
+        vid = _strip_video_ext(vid)
         for ck in _CAP_KEYS:
             val = rec.get(ck)
             if not val:
@@ -141,11 +159,14 @@ _QA_KEY_PAIRS: tuple[tuple[str, str], ...] = (("question", "answer"), ("q", "a")
 def parse_qa_records(annotations: str | Path) -> dict[str, list[tuple[str, str]]]:
     """Parse a top-level LIST of QA records into ``video_id -> [(question, answer), ...]``.
 
-    Handles the standard MSRVTT-QA shape (one row per QA pair), e.g.
-    ``[{"video_id": "video0", "question": "...", "answer": "..."}, ...]``. The id
-    key is auto-detected via ``_ID_KEYS``; the question/answer key pair is
-    auto-detected via ``_QA_KEY_PAIRS`` (some mirrors use ``q``/``a``). Records
-    missing an id, a question, or an answer are skipped.
+    Handles the standard MSRVTT-QA shape (one row per QA pair) as published by
+    Salesforce LAVIS (``qa_train.json`` / ``qa_val.json`` / ``qa_test.json``), e.g.
+    ``[{"video": "video0.mp4", "question": "...", "answer": "..."}, ...]``, as well
+    as mirrors that instead use a bare ``video_id``. The id key is auto-detected via
+    ``_ID_KEYS`` and normalized (a trailing ``.mp4``-style extension is stripped, so
+    ``"video0.mp4"`` and ``"video0"`` key to the SAME video); the question/answer
+    key pair is auto-detected via ``_QA_KEY_PAIRS`` (some mirrors use ``q``/``a``).
+    Records missing an id, a question, or an answer are skipped.
     """
     data = json.loads(Path(annotations).read_text())
     if not isinstance(data, list):
@@ -160,6 +181,7 @@ def parse_qa_records(annotations: str | Path) -> dict[str, list[tuple[str, str]]
         vid = next((str(rec[k]) for k in _ID_KEYS if rec.get(k) is not None), None)
         if vid is None:
             continue
+        vid = _strip_video_ext(vid)
         for qk, ak in _QA_KEY_PAIRS:
             q, a = rec.get(qk), rec.get(ak)
             if q and a:
