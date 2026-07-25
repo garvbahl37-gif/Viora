@@ -13,13 +13,16 @@ _HAS_FFMPEG = shutil.which("ffmpeg") is not None
 pytestmark = pytest.mark.skipif(not _HAS_FFMPEG, reason="needs ffmpeg for mp4 encode")
 
 from viora.data.adapters.video_caption import (  # noqa: E402
+    build_caption_qa_shards,
     build_caption_shards,
     caption_shard_samples,
     index_video_files,
     load_captions_auto,
+    merged_shard_samples,
     parse_caption_records,
     parse_folder_sidecar,
     parse_msrvtt,
+    parse_qa_records,
 )
 from viora.data.webdataset_pipeline import (  # noqa: E402
     build_video_text_webdataset,
@@ -166,3 +169,93 @@ def test_build_caption_shards_auto_records_end_to_end(tmp_path):
     ]))
     n = build_caption_shards(tmp_path / "vids", ann, str(tmp_path / "r-%06d.tar"), fmt="auto")
     assert n == 2
+
+
+def test_parse_qa_records_groups_by_video_and_detects_keys(tmp_path):
+    ann = tmp_path / "train_qa.json"
+    ann.write_text(json.dumps([
+        {"id": 1, "video_id": "video0", "question": "what is the man doing", "answer": "singing"},
+        {"id": 2, "video_id": "video0", "question": "how many people", "answer": "one"},
+        {"id": 3, "video_id": "video1", "question": "what color is the car", "answer": "red"},
+    ]))
+    qa = parse_qa_records(ann)
+    assert qa["video0"] == [("what is the man doing", "singing"), ("how many people", "one")]
+    assert qa["video1"] == [("what color is the car", "red")]
+
+
+def test_parse_qa_records_accepts_q_a_key_spelling(tmp_path):
+    ann = tmp_path / "alt_qa.json"
+    ann.write_text(json.dumps([{"video_id": "video0", "q": "who is this", "a": "a man"}]))
+    assert parse_qa_records(ann) == {"video0": [("who is this", "a man")]}
+
+
+def test_parse_qa_records_rejects_top_level_object(tmp_path):
+    ann = tmp_path / "not_a_list.json"
+    ann.write_text(json.dumps({"video0": "not a qa record"}))
+    with pytest.raises(ValueError, match="top-level JSON list"):
+        parse_qa_records(ann)
+
+
+def test_parse_qa_records_skips_incomplete_records(tmp_path):
+    ann = tmp_path / "qa.json"
+    ann.write_text(json.dumps([
+        {"video_id": "video0", "question": "q only, no answer"},
+        {"question": "no video id", "answer": "a"},
+        {"video_id": "video1", "question": "complete", "answer": "yes"},
+    ]))
+    assert parse_qa_records(ann) == {"video1": [("complete", "yes")]}
+
+
+def test_merged_shard_samples_combines_both_and_skips_neither(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1", "video2"])
+    idx = index_video_files(tmp_path / "vids")
+    captions = {"video0": ["a cat plays"], "video1": ["a dog runs"]}
+    qa = {"video0": [("what animal", "a cat")], "video2": [("what color", "blue")]}
+    out = {s["meta"]["video_id"]: s["meta"] for s in merged_shard_samples(captions, qa, idx)}
+    assert set(out) == {"video0", "video1", "video2"}
+    assert out["video0"]["captions"] == ["a cat plays"] and out["video0"]["qa"] == [["what animal", "a cat"]]
+    assert out["video1"]["captions"] == ["a dog runs"] and "qa" not in out["video1"]
+    assert out["video2"]["qa"] == [["what color", "blue"]] and "captions" not in out["video2"]
+
+
+def test_merged_shard_samples_skips_video_with_neither(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1"])
+    idx = index_video_files(tmp_path / "vids")
+    # video1 has a file but no captions/qa at all -> must not appear
+    out = list(merged_shard_samples({"video0": ["cap"]}, {}, idx))
+    assert len(out) == 1 and out[0]["meta"]["video_id"] == "video0"
+
+
+def test_build_caption_qa_shards_end_to_end(tmp_path):
+    _write_videos(tmp_path / "vids", ["video0", "video1"])
+    cap_ann = tmp_path / "captions.json"
+    cap_ann.write_text(json.dumps([
+        {"video_id": "video0", "caption": "a cat plays"},
+        {"video_id": "video1", "caption": "a dog runs"},
+    ]))
+    qa_ann = tmp_path / "qa.json"
+    qa_ann.write_text(json.dumps([
+        {"video_id": "video0", "question": "what animal", "answer": "a cat"},
+    ]))
+    n = build_caption_qa_shards(
+        tmp_path / "vids", str(tmp_path / "combined-%06d.tar"),
+        captions_path=cap_ann, captions_fmt="records", qa_path=qa_ann,
+    )
+    assert n == 2
+
+    ds = build_video_text_webdataset(
+        str(tmp_path / "combined-000000.tar"), num_frames=8, resampled=False, shuffle=0
+    )
+    items = {it["video_id"]: it for it in iter(ds)}
+    assert items["video0"]["captions"] == ["a cat plays"]
+    assert items["video0"]["qa"] == [["what animal", "a cat"]]
+    assert "qa" not in items["video1"]
+
+
+def test_build_caption_qa_shards_qa_only(tmp_path):
+    # captions_path omitted -> QA-only shards (still valid: collator falls back to QA)
+    _write_videos(tmp_path / "vids", ["video0"])
+    qa_ann = tmp_path / "qa.json"
+    qa_ann.write_text(json.dumps([{"video_id": "video0", "question": "q", "answer": "a"}]))
+    n = build_caption_qa_shards(tmp_path / "vids", str(tmp_path / "qaonly-%06d.tar"), qa_path=qa_ann)
+    assert n == 1
