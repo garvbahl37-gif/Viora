@@ -12,7 +12,7 @@ from tests.unit.test_viora_e2e import tiny_viora_config
 from viora.data.collators.video_text_collator import VideoTextCollator
 from viora.data.datasets.base import SyntheticVideoDataset
 from viora.models.viora import VioraForVideoUnderstanding
-from viora.training.checkpointing import load_checkpoint, save_checkpoint
+from viora.training.checkpointing import latest_checkpoint, load_checkpoint, save_checkpoint
 from viora.training.optimizer import build_optimizer
 from viora.training.scheduler import build_scheduler
 from viora.training.trainer import Trainer
@@ -207,6 +207,36 @@ def test_checkpoint_pruning_recovers_from_overflow(tmp_path):
     remaining = sorted(int(p.rsplit("step_", 1)[1].split(".")[0])
                        for p in glob.glob(str(tmp_path / "step_*.pt")))
     assert remaining == [1200, 1400, 1600]              # bounded to keep_last (2 kept + new)
+
+
+def test_latest_checkpoint_prefers_newest_mtime_not_final_by_name(tmp_path):
+    """Regression: a session can write NEWER step_*.pt after `final.pt` already
+    exists (pulled from a previous run, then training continues but doesn't reach
+    a fresh Trainer.save("final")). Selection must go by recency, not by name."""
+    import os
+    import time
+
+    final = tmp_path / "final.pt"
+    final.write_bytes(b"stale")
+    time.sleep(0.01)
+    step = tmp_path / "step_200.pt"
+    step.write_bytes(b"fresh")
+    os.utime(step, (time.time() + 10, time.time() + 10))  # unambiguously newer
+
+    assert latest_checkpoint(tmp_path) == step
+
+
+def test_latest_checkpoint_returns_final_when_it_is_newest(tmp_path):
+    (tmp_path / "step_200.pt").write_bytes(b"old")
+    import time
+    time.sleep(0.01)
+    final = tmp_path / "final.pt"
+    final.write_bytes(b"newest")
+    assert latest_checkpoint(tmp_path) == final
+
+
+def test_latest_checkpoint_none_when_empty(tmp_path):
+    assert latest_checkpoint(tmp_path) is None
 
 
 def test_default_step_fn_computes_contrastive_when_weighted(tmp_path):

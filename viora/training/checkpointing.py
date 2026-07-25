@@ -54,6 +54,23 @@ def save_checkpoint(
     logger.info("saved checkpoint -> %s (step %d)", path, step)
 
 
+def latest_checkpoint(output_dir: str | Path) -> Path | None:
+    """Return the MOST RECENTLY WRITTEN checkpoint in ``output_dir`` (or ``None``).
+
+    Considers both ``final.pt`` and ``step_*.pt``, picking by modification time —
+    NOT by preferring ``final.pt`` unconditionally. ``final.pt`` is only written
+    once training reaches its full step target and completes cleanly
+    (:meth:`Trainer.train`'s final ``self.save("final")``); a session that trains
+    further but is interrupted (crash, time limit) before that point leaves
+    ``final.pt`` stale while newer ``step_*.pt`` files sit right next to it.
+    Picking by filename (``final.pt`` first) silently hides that newer progress.
+    """
+    candidates = list(Path(output_dir).glob("final.pt")) + list(Path(output_dir).glob("step_*.pt"))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
 def export_trained_weights(
     model: nn.Module, checkpoint_path: str | Path, out_path: str | Path,
     *, map_location: str = "cpu",
