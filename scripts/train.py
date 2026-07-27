@@ -62,11 +62,30 @@ class hf_tokenize_fn:
         # Append EOS so the target ends with a stop token — otherwise the model never learns
         # to end generation and rambles at inference. EOS stays unmasked (a supervised label).
         eos = self.tokenizer.eos_token or ""
-        texts = [t + eos for t in texts]
-        enc = self.tokenizer(texts, padding=True, truncation=True, max_length=self.max_length,
+        texts_with_eos = [t + eos for t in texts]
+        enc = self.tokenizer(texts_with_eos, padding=True, truncation=True, max_length=self.max_length,
                              return_tensors="pt")
         labels = enc["input_ids"].clone()
         labels[enc["attention_mask"] == 0] = -100  # ignore pads; injection ignores visual tokens
+
+        # QA views ("<video>\nQuestion: ...\nAnswer: {answer}") also mask the question/prefix --
+        # only the answer (+EOS) should drive the loss. The model is never asked to GENERATE the
+        # question at inference (it's given as context), so supervising it just dilutes the
+        # gradient signal for what actually matters: producing the right short answer.
+        marker = "\nAnswer: "
+        for i, t in enumerate(texts):
+            idx = t.find(marker)
+            if idx == -1:
+                continue  # a caption (or anything without the marker) -- supervise it fully
+            prompt = t[: idx + len(marker)]
+            prompt_len = len(self.tokenizer([prompt], add_special_tokens=False)["input_ids"][0])
+            real = enc["attention_mask"][i].nonzero(as_tuple=True)[0]
+            if real.numel() == 0:
+                continue
+            start = int(real[0])                              # first REAL (non-pad) token,
+            end = min(start + prompt_len, int(real[-1]) + 1)   # regardless of padding side
+            labels[i, start:end] = -100
+
         return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"], "labels": labels}
 
 

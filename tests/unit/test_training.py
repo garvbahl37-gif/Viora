@@ -297,6 +297,40 @@ def test_hf_tokenizer_appends_eos():
     assert all(t.endswith("<eos>") for t in _Tok.seen)  # EOS appended so the model learns to stop
 
 
+def test_hf_tokenizer_masks_qa_prompt_but_not_answer():
+    """QA-formatted text ('<video>\\nQuestion: ...\\nAnswer: {answer}') must mask the
+    question/prefix tokens in labels -- only the answer (+EOS) should drive the loss.
+    A caption (no 'Answer: ' marker) stays fully supervised, unaffected."""
+    import sys
+    sys.path.insert(0, "scripts")
+    from train import hf_tokenize_fn
+
+    class _Tok:
+        eos_token = "<eos>"
+
+        def __call__(self, texts, **kw):  # noqa: ARG002
+            rows = [[7] * len(t.split()) for t in texts]
+            n = max(len(r) for r in rows) if rows else 0
+            ids = torch.zeros(len(rows), n, dtype=torch.long)
+            attn = torch.zeros(len(rows), n, dtype=torch.long)
+            for i, r in enumerate(rows):
+                ids[i, : len(r)] = torch.tensor(r)
+                attn[i, : len(r)] = 1
+            return {"input_ids": ids, "attention_mask": attn}
+
+    tok = _Tok()
+    prompt = "<video>\nQuestion: what is the man doing\nAnswer: "
+    prompt_len = len(tok([prompt])["input_ids"][0])
+
+    texts = [prompt + "talk", "<video>\na man is talking"]
+    out = hf_tokenize_fn(tok, max_length=64)(texts)
+    labels = out["labels"]
+
+    assert (labels[0, :prompt_len] == -100).all()       # question + "Answer: " masked
+    assert (labels[0, prompt_len:] != -100).any()        # answer ("talk") + eos still supervised
+    assert (labels[1][out["attention_mask"][1] == 1] != -100).all()  # caption fully supervised
+
+
 @pytest.mark.parametrize(
     ("scale_before", "scale_after", "expect_steps"),
     [(65536.0, 65536.0, 1),   # no overflow -> optimizer stepped -> schedule advances
