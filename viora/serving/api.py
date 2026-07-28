@@ -70,6 +70,13 @@ def _get_pipeline():
         from viora.utils.config import load_config
 
         cfg = load_config(os.environ.get("VIORA_MODEL_CONFIG", "configs/model/viora_tiny.yaml"))
+        # Frames sampled per clip. Training used 8 (MSR-VTT clips average ~15s), which is
+        # far too sparse for long uploads -- a 344s video gets one frame every 43s. The
+        # temporal stack has no fixed-size positional embeddings, so more frames work at
+        # inference; cost is roughly linear (8->64 frames was ~1.1s->2.9s on CPU).
+        nf = os.environ.get("VIORA_NUM_FRAMES")
+        if nf:
+            cfg.vision.num_frames = int(nf)
         model = VioraForVideoUnderstanding(cfg)
         ckpt = os.environ.get("VIORA_CHECKPOINT")
         if ckpt:

@@ -31,6 +31,9 @@ else
 fi
 
 [[ -n "$DEVICE" ]] && export VIORA_DEVICE="$DEVICE"
+# Frames sampled per clip (training used 8). Long uploads need more:
+#   VIORA_NUM_FRAMES=32 ./scripts/serve.sh <ckpt>
+export VIORA_NUM_FRAMES="${VIORA_NUM_FRAMES:-}"
 
 # Resolve an interpreter: the project venv first (it has viora + uvicorn installed),
 # then an active venv, then python3. Bare `python` often does not exist on macOS.
