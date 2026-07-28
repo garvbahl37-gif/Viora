@@ -355,6 +355,27 @@ def test_scheduler_advances_only_on_real_optimizer_step(
     assert seen["n"] == expect_steps
 
 
+def test_log_rate_measures_this_session_not_absolute_step(tmp_path, caplog):
+    """Regression: it/s divided the ABSOLUTE step count by this session's elapsed
+    time. Resuming at step 11400 reported '225 it/s' decaying toward the real rate,
+    because the 11400 already-done steps were credited to this session's clock."""
+    import logging
+    import time
+
+    model = VioraForVideoUnderstanding(tiny_viora_config())
+    trainer = Trainer(model, _train_cfg(tmp_path), device="cpu")
+
+    trainer.step = 11410           # resumed at 11400, did 10 steps this session
+    trainer.metrics.update({"loss": 1.0})
+    t0 = time.time() - 20.0        # 20 seconds elapsed this session
+
+    with caplog.at_level(logging.INFO, logger="viora.training.trainer"):
+        trainer._log(t0, start_step=11400)
+
+    # 10 steps / 20s = 0.50 it/s -- NOT 11410/20 = 570 it/s
+    assert "0.50 it/s" in caplog.text, caplog.text
+
+
 def test_nan_loss_is_flagged_not_hidden(tmp_path):
     model = VioraForVideoUnderstanding(tiny_viora_config())
 

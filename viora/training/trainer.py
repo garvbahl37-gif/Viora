@@ -199,6 +199,12 @@ class Trainer:
         max_steps = self.cfg.max_steps
         logger.info("training: up to %d steps on %s (%s)", max_steps, self.dev_info.name, self.cfg.precision)
         t0 = time.time()
+        # Steps already done before this session (non-zero when resuming). The it/s rate
+        # must measure steps completed THIS session against THIS session's elapsed time --
+        # dividing the absolute step count by session-elapsed reports a wildly inflated
+        # rate that decays toward the truth (e.g. resuming at 11400 showed "225 it/s"
+        # falling to "2.25 it/s" while the real rate was a steady ~0.45).
+        start_step = self.step
         micro = 0
         done = False
         while not done:
@@ -211,7 +217,7 @@ class Trainer:
                     self.metrics.update({**{k: v for k, v in stats.items() if isinstance(v, (int, float))},
                                          "grad_norm": grad_norm, "lr": self.scheduler.get_last_lr()[0]})
                     if self.step % self.cfg.log_every == 0:
-                        self._log(t0)
+                        self._log(t0, start_step)
                     if self.cfg.save_every and self.step % self.cfg.save_every == 0:
                         self.save(f"step_{self.step}")
                     if val_loader is not None and self.cfg.eval_every and self.step % self.cfg.eval_every == 0:
@@ -225,10 +231,10 @@ class Trainer:
         self.save("final")
         return self.metrics.summary() or self._last_summary
 
-    def _log(self, t0: float) -> None:
+    def _log(self, t0: float, start_step: int = 0) -> None:
         s = self.metrics.summary()
         self._last_summary = s
-        rate = self.step / max(1e-6, time.time() - t0)
+        rate = (self.step - start_step) / max(1e-6, time.time() - t0)
         logger.info(
             "step %d | loss %.4f | lr %.2e | grad %.2f | %.2f it/s",
             self.step, s.get("loss", 0.0), s.get("lr", 0.0), s.get("grad_norm", 0.0), rate,
