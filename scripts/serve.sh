@@ -32,5 +32,25 @@ fi
 
 [[ -n "$DEVICE" ]] && export VIORA_DEVICE="$DEVICE"
 
-echo "open http://127.0.0.1:${PORT}"
-exec python -m uvicorn viora.serving.api:app --host 127.0.0.1 --port "$PORT"
+# Resolve an interpreter: the project venv first (it has viora + uvicorn installed),
+# then an active venv, then python3. Bare `python` often does not exist on macOS.
+if [[ -x .venv/bin/python ]]; then
+  PY=".venv/bin/python"
+elif [[ -n "${VIRTUAL_ENV:-}" && -x "$VIRTUAL_ENV/bin/python" ]]; then
+  PY="$VIRTUAL_ENV/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PY="python3"
+elif command -v python >/dev/null 2>&1; then
+  PY="python"
+else
+  echo "no python interpreter found (tried .venv/bin/python, \$VIRTUAL_ENV, python3, python)" >&2
+  exit 1
+fi
+
+if ! "$PY" -c "import uvicorn" 2>/dev/null; then
+  echo "uvicorn is not installed for $PY -- run:  $PY -m pip install -e '.[serve]'" >&2
+  exit 1
+fi
+
+echo "open http://127.0.0.1:${PORT}   (interpreter: $PY)"
+exec "$PY" -m uvicorn viora.serving.api:app --host 127.0.0.1 --port "$PORT"
