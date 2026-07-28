@@ -110,7 +110,12 @@ class VioraInferencePipeline:
         self.num_frames = cfg.num_frames
         self.sampler = build_sampler(sampler, cfg.num_frames)
         self.transform = VideoTransform(size=cfg.image_size)
-        self.tubelet = cfg.tubelet_size
+        # Temporal stride from frames -> temporal tokens. The 3D ViT downsamples time by
+        # tubelet_size; the PRETRAINED frame encoder keeps one token per frame (stride 1).
+        # Using tubelet_size for the pretrained path produced HALF as many timestamps as
+        # temporal tokens, so ask()'s topk over tokens indexed past the end of
+        # `timestamps` -> IndexError. Mirrors default_step_fn's stride in the trainer.
+        self.tubelet = cfg.tubelet_size if cfg.backbone == "scratch" else 1
 
     # ------------------------------------------------------------- indexing
     @torch.no_grad()

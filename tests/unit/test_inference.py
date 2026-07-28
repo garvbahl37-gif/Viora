@@ -51,6 +51,26 @@ def test_ask_returns_evidence_and_score_type():
     assert ans.diagnostics["model_trained"] is False  # honest labeling
 
 
+def test_index_timestamps_match_temporal_tokens_for_pretrained_backbone(monkeypatch):
+    """Regression: the pretrained frame encoder emits ONE temporal token per frame,
+    but index() still divided the frame timestamps by tubelet_size -- yielding half as
+    many timestamps as tokens. ask()'s topk over tokens then indexed past the end of
+    `timestamps` and raised IndexError, breaking /video/ask for every trained
+    (pragmatic) deployment. The stride must be 1 unless the backbone is 'scratch'.
+    """
+    cfg = tiny_viora_config()
+    cfg.vision.backbone = "pretrained"
+    model = _model()                       # scratch model is fine; only cfg drives stride
+    model.cfg.vision.backbone = "pretrained"
+    model.cfg.vision.tubelet_size = 2      # would halve the timestamps if wrongly applied
+
+    pipe = VioraInferencePipeline(model, device="cpu")
+    assert pipe.tubelet == 1, "pretrained backbone must use stride 1, not tubelet_size"
+
+    model.cfg.vision.backbone = "scratch"
+    assert VioraInferencePipeline(model, device="cpu").tubelet == 2  # 3D ViT still strides
+
+
 def test_caption_requires_real_tokenizer():
     # the tiny config uses a dummy LLM (no tokenizer) -> caption() must fail clearly,
     # not produce garbage; real captioning needs a trained non-dummy model.
