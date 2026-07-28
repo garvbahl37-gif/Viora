@@ -94,10 +94,20 @@ class VideoDecoder:
     Args:
         backend: ``"auto"`` | ``"pyav"`` | ``"torchvision"`` | ``"decord"``.
         max_bytes: file-size safety cap.
+        max_decoded_frames: hard cap on how many frames are held in memory at once.
+            Decoding materialised EVERY frame at full resolution before subsampling,
+            so a 1-minute 1080p clip allocated ~11 GB and the OS SIGKILLed the process
+            ("zsh: killed") -- for a model that only needs 8 frames. Frames are now
+            decimated on the fly (keep every Nth, doubling N whenever the cap is hit)
+            so memory is bounded while temporal coverage stays roughly uniform.
     """
 
-    def __init__(self, backend: str = "auto", *, max_bytes: int = DEFAULT_MAX_BYTES) -> None:
+    def __init__(
+        self, backend: str = "auto", *, max_bytes: int = DEFAULT_MAX_BYTES,
+        max_decoded_frames: int = 128,
+    ) -> None:
         self.max_bytes = max_bytes
+        self.max_decoded_frames = max(1, max_decoded_frames)
         self.backend = self._resolve_backend(backend)
 
     @staticmethod
@@ -186,6 +196,9 @@ class VideoDecoder:
                     # seek to the keyframe at/just before start (offset in time_base units)
                     offset = int(start_time / stream.time_base)
                     container.seek(offset, backward=True, stream=stream)
+                cap = self.max_decoded_frames
+                stride = 1        # keep every `stride`-th in-window frame
+                seen = 0          # in-window frames encountered so far
                 for frame in container.decode(stream):
                     if frame.pts is None:
                         continue
@@ -194,8 +207,20 @@ class VideoDecoder:
                         continue  # frames before the window (post-keyframe-seek)
                     if end_time is not None and t > end_time + 1e-6:
                         break
-                    frames.append(frame.to_ndarray(format="rgb24"))
-                    times.append(t)
+                    # Only materialise every `stride`-th frame: to_ndarray() is what
+                    # actually allocates (H*W*3 bytes), so skipping it here is what
+                    # bounds memory on long/high-resolution clips.
+                    if seen % stride == 0:
+                        frames.append(frame.to_ndarray(format="rgb24"))
+                        times.append(t)
+                        if len(frames) > cap:
+                            # too many: halve what we hold and sample twice as sparsely
+                            # from here on. Keeps ~uniform coverage without knowing the
+                            # clip's total frame count up front.
+                            del frames[1::2]
+                            del times[1::2]
+                            stride *= 2
+                    seen += 1
         except Exception as e:  # noqa: BLE001
             raise VideoDecodeError(f"decode failed for {p}: {e}") from e
 

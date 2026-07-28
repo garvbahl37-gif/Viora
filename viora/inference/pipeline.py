@@ -105,8 +105,14 @@ class VioraInferencePipeline:
     ) -> None:
         self.model = model.to(device).eval()
         self.device = device
-        self.decoder = decoder or VideoDecoder()
         cfg = model.cfg.vision
+        # The sampler only ever picks cfg.num_frames frames, so there is no reason to
+        # hold the whole decoded clip in RAM. 8x oversampling gives the sampler plenty
+        # of choice while bounding a 1080p upload to a few hundred MB instead of the
+        # multi-GB allocation that got the server SIGKILLed.
+        self.decoder = decoder or VideoDecoder(
+            max_decoded_frames=max(64, cfg.num_frames * 8)
+        )
         self.num_frames = cfg.num_frames
         self.sampler = build_sampler(sampler, cfg.num_frames)
         self.transform = VideoTransform(size=cfg.image_size)

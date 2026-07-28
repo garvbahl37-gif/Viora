@@ -87,3 +87,26 @@ def test_validation_errors(tmp_path):
 def test_available_backends_reports_pyav():
     # PyAV is installed in this environment
     assert "pyav" in VideoDecoder.available_backends()
+
+
+@requires_video
+def test_decode_bounds_frames_in_memory(tmp_path):
+    """Regression: decoding materialised EVERY frame at full resolution before
+    subsampling, so a long/high-res clip allocated many GB and the OS SIGKILLed the
+    process ('zsh: killed') -- for a model that only needs 8 frames. The decoder must
+    hold at most max_decoded_frames at a time while still spanning the whole clip."""
+    long_clip = tmp_path / "long.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+         "-i", "testsrc=duration=20:size=160x120:rate=30",  # 600 frames
+         "-pix_fmt", "yuv420p", str(long_clip)],
+        check=True,
+    )
+    dec = VideoDecoder(max_decoded_frames=32)
+    clip = dec.decode_clip(long_clip)
+
+    assert clip.extra["kept"] <= 32                      # memory stayed bounded
+    assert clip.frames.shape[0] == clip.extra["kept"]
+    # coverage: still spans essentially the whole 20s clip, not just the first second
+    assert float(clip.timestamps[0]) < 1.0
+    assert float(clip.timestamps[-1]) > 15.0
