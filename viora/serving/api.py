@@ -25,6 +25,7 @@ from viora.data.decoding.video_decoder import VALID_EXTENSIONS  # noqa: E402
 from viora.serving.schemas import (  # noqa: E402
     AskRequest,
     AskResponse,
+    CaptionResponse,
     EventsResponse,
     HealthResponse,
     IndexResponse,
@@ -43,9 +44,26 @@ _pipeline = None
 _indices: dict[str, object] = {}
 
 
+def _resolve_device() -> str:
+    """``VIORA_DEVICE`` if set, else CUDA when available, else CPU.
+
+    MPS is deliberately NOT auto-selected: the pretrained-vision path hits MPS conv
+    gaps (the same reason scripts/train.py exposes --device). Set VIORA_DEVICE=mps
+    explicitly to opt in.
+    """
+    import torch
+
+    dev = os.environ.get("VIORA_DEVICE")
+    if dev:
+        return dev
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def _get_pipeline():
     global _pipeline
     if _pipeline is None:
+        import torch
+
         from viora.inference.pipeline import VioraInferencePipeline
         from viora.models.viora import VioraForVideoUnderstanding
         from viora.training.checkpointing import load_checkpoint
@@ -55,8 +73,24 @@ def _get_pipeline():
         model = VioraForVideoUnderstanding(cfg)
         ckpt = os.environ.get("VIORA_CHECKPOINT")
         if ckpt:
-            load_checkpoint(ckpt, model, map_location="cpu")
-        _pipeline = VioraInferencePipeline(model, device="cpu")
+            # A checkpoint from export_trained_weights holds ONLY the trainable params
+            # (LoRA + bridge + heads); the frozen backbones come from their pretrained
+            # source at build time. Loading that with strict=True raises on every
+            # missing frozen key, so honour the flag the exporter writes.
+            #
+            # Probed under weights_only=True (no arbitrary-object unpickling): the small
+            # export is tensors + a bool + a plain config dict, so it loads fine here. A
+            # FULL checkpoint carries RNG state (numpy objects) and raises instead --
+            # which is exactly the signal that it is not a trainable-only export, so the
+            # except branch's strict=True is the correct answer for it anyway.
+            try:
+                trainable_only = bool(
+                    torch.load(ckpt, map_location="cpu", weights_only=True).get("trainable_only", False)
+                )
+            except Exception:  # noqa: BLE001 - unreadable under weights_only -> a full checkpoint
+                trainable_only = False
+            load_checkpoint(ckpt, model, map_location="cpu", strict=not trainable_only)
+        _pipeline = VioraInferencePipeline(model, device=_resolve_device())
     return _pipeline
 
 
@@ -72,8 +106,12 @@ def studio() -> FileResponse:
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
+    # Report what is ACTUALLY configured -- these were hardcoded to the tiny/CPU
+    # defaults, which silently misreported a pragmatic-model deployment.
+    cfg_path = os.environ.get("VIORA_MODEL_CONFIG", "configs/model/viora_tiny.yaml")
     return HealthResponse(
-        model="viora_tiny", device="cpu", model_trained=_model_trained(), version=__version__
+        model=Path(cfg_path).stem, device=_resolve_device(),
+        model_trained=_model_trained(), version=__version__,
     )
 
 
@@ -123,6 +161,28 @@ def ask(req: AskRequest) -> AskResponse:
         score=ans.score, score_type=ans.score_type, events_used=ans.events_used,
         model_trained=bool(ans.diagnostics.get("model_trained", False)),
     )
+
+
+@app.post("/video/caption", response_model=CaptionResponse)
+def caption(req: SummarizeRequest) -> CaptionResponse:
+    """Describe the clip in the model's own words (the caption-trained ability).
+
+    Distinct from ``/video/ask``: this uses the ``<video>\\n{caption}`` prompt the
+    model was trained on, rather than the QA prompt. Requires a real (non-dummy)
+    LLM, so an untrained/tiny deployment gets a clear 400 instead of gibberish.
+    """
+    idx = _require_index(req.index_id)
+    pipe = _get_pipeline()
+    try:
+        text, conf = pipe.caption(idx)
+    except RuntimeError as e:  # dummy LLM has no tokenizer
+        raise HTTPException(
+            400,
+            f"captioning needs a trained model with a real tokenizer: {e}. "
+            "Set VIORA_MODEL_CONFIG=configs/model/viora_pragmatic.yaml and "
+            "VIORA_CHECKPOINT=<your final.pt>.",
+        ) from e
+    return CaptionResponse(caption=text, confidence=conf, model_trained=_model_trained())
 
 
 @app.post("/video/events", response_model=EventsResponse)

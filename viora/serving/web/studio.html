@@ -1259,6 +1259,7 @@ button { font-family: inherit; cursor: pointer; }
         buildLiveEventList(moments);
         $("ev-count").textContent = moments.length + " tokens";
       }
+
       // generic presets for an arbitrary uploaded clip
       const box = $("presets");
       box.innerHTML = "";
@@ -1270,10 +1271,37 @@ button { font-family: inherit; cursor: pointer; }
         box.appendChild(b);
       });
       note.remove();
-      addAnswer({ answer: "Indexed **" + file.name + "** — " + DURATION.toFixed(1) +
-        "s. Ask a question below. (Model is untrained, so answers point to temporal evidence.)",
+      addAnswer({ answer: "Indexed **" + file.name + "** — " + DURATION.toFixed(1) + "s.",
         evidence: [], score: 0, used: [], empty: true });
       setEvidence([], []); seek(0);
+
+      // The model's own description of the clip -- the caption-trained ability, shown
+      // before any question is asked. A 400 here means this deployment has no real
+      // tokenizer (untrained/tiny model); surface that rather than hiding it, and let
+      // the message itself say whether answers are real or evidence-only.
+      const capThink = showThinking("Describing the clip");
+      try {
+        const cr = await fetch("/video/caption", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ index_id: state.indexId }),
+        });
+        capThink.remove();
+        if (cr.ok) {
+          const cj = await cr.json();
+          addAnswer({ answer: "**Viora sees:** " + escapeHtml(cj.caption) +
+            "\n\nAsk a question below.", evidence: [], score: cj.confidence || 0, used: [] });
+        } else {
+          const detail = (await cr.json().catch(() => ({}))).detail ||
+            ("caption unavailable (" + cr.status + ")");
+          addAnswer({ answer: escapeHtml(String(detail)) +
+            "\n\nYou can still ask questions — answers will point to temporal evidence.",
+            evidence: [], score: 0, used: [], empty: true });
+        }
+      } catch (err) {
+        capThink.remove();
+        addAnswer({ answer: "Caption request failed (" + escapeHtml(err.message) + ")",
+                    evidence: [], score: 0, used: [], empty: true });
+      }
     } catch (err) {
       note.remove();
       addAnswer({ answer: "Couldn't index the video (" + escapeHtml(err.message) +

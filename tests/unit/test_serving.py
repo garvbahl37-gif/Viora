@@ -68,3 +68,60 @@ def test_full_index_ask_flow(tmp_path):
 
     r = client.post("/video/events", json={"index_id": iid})
     assert r.status_code == 200 and len(r.json()["moments"]) > 0
+
+    # captioning needs a real tokenizer; the default (dummy-LLM) deployment must say
+    # so clearly rather than emitting gibberish
+    r = client.post("/video/caption", json={"index_id": iid})
+    assert r.status_code == 400
+    assert "viora_pragmatic" in r.json()["detail"]  # tells the operator how to fix it
+
+
+def test_caption_unknown_index_is_404():
+    r = client.post("/video/caption", json={"index_id": "does-not-exist"})
+    assert r.status_code == 404
+
+
+def test_health_reports_configured_model_not_a_hardcoded_default(monkeypatch):
+    """Regression: /health hardcoded model='viora_tiny', device='cpu', so a
+    pragmatic-model deployment silently misreported what it was serving."""
+    import viora.serving.api as api
+
+    monkeypatch.setenv("VIORA_MODEL_CONFIG", "configs/model/viora_pragmatic.yaml")
+    monkeypatch.setenv("VIORA_DEVICE", "cuda")
+    body = client.get("/health").json()
+    assert body["model"] == "viora_pragmatic"
+    assert body["device"] == "cuda"
+    assert api  # module imported for clarity about what is under test
+
+
+def test_trainable_only_checkpoint_loads_non_strict(tmp_path, monkeypatch):
+    """A checkpoint from export_trained_weights holds ONLY trainable params, so
+    strict=True would raise on every missing frozen key. The serving loader must
+    detect the exporter's flag and load non-strict."""
+    import torch
+
+    import viora.serving.api as api
+    from viora.models.viora import VioraForVideoUnderstanding
+    from viora.training.checkpointing import export_trained_weights, save_checkpoint
+    from viora.utils.config import load_config
+
+    # MUST be the same config the API will build, or the mismatch is a shape error
+    # rather than the missing-frozen-keys case under test
+    cfg_path = "configs/model/viora_tiny.yaml"
+    model = VioraForVideoUnderstanding(load_config(cfg_path))
+    for p in model.vision.parameters():
+        p.requires_grad_(False)
+    full = tmp_path / "full.pt"
+    save_checkpoint(full, model, step=1)
+    small = tmp_path / "trained.pt"
+    export_trained_weights(model, full, small)
+
+    # the probe must read the flag without unpickling arbitrary objects
+    assert torch.load(small, map_location="cpu", weights_only=True)["trainable_only"] is True
+
+    monkeypatch.setattr(api, "_pipeline", None)
+    monkeypatch.setenv("VIORA_MODEL_CONFIG", cfg_path)
+    monkeypatch.setenv("VIORA_CHECKPOINT", str(small))
+    monkeypatch.setenv("VIORA_DEVICE", "cpu")
+    api._get_pipeline()          # would raise RuntimeError(missing keys) if strict
+    monkeypatch.setattr(api, "_pipeline", None)   # don't leak the built pipeline

@@ -46,6 +46,12 @@ class AskResponse(BaseModel):
     model_trained: bool
 
 
+class CaptionResponse(BaseModel):
+    caption: str
+    confidence: float          # uncalibrated mean token probability
+    model_trained: bool
+
+
 class MomentModel(BaseModel):
     timestamp: float
     index: int
