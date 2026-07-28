@@ -103,3 +103,23 @@ def test_decoder_failure_counter_resets_on_success():
     with pytest.raises(Exception) as ei:       # noqa: PT011
         dec(bad)
     assert not isinstance(ei.value, _StreamBroken)  # would have aborted at 3 without the reset
+
+
+def test_shard_spec_splits_on_double_colon(tmp_path):
+    """One CLI string must be able to MIX several shard sources (e.g. a local dataset
+    plus one streamed from a remote host) via '::'. Without this, training can only
+    ever draw from a single source."""
+    import torch as _torch
+
+    from viora.data.webdataset_pipeline import write_video_text_shards
+
+    for s in range(2):
+        write_video_text_shards(
+            [{"video": _torch.rand(3, 8, 32, 32), "meta": {"captions": [f"s{s}c{i}"]}}
+             for i in range(2)],
+            str(tmp_path / f"src{s}-%06d.tar"), maxcount=100)
+
+    spec = f"{tmp_path / 'src0-000000.tar'}::{tmp_path / 'src1-000000.tar'}"
+    ds = build_video_text_webdataset(spec, num_frames=8, resampled=False, shuffle=0)
+    caps = {c for it in ds for c in it["captions"]}
+    assert {"s0c0", "s0c1", "s1c0", "s1c1"} <= caps   # BOTH sources present

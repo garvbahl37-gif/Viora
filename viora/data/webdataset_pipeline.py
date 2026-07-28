@@ -206,11 +206,20 @@ def build_video_text_webdataset(
 ):
     """Streaming ``IterableDataset`` yielding model-ready dicts, split across nodes/workers.
 
-    ``shards`` is a brace pattern (``"data/train-{000000..000099}.tar"``) or a list.
-    Set ``resampled=True`` for infinite sampling with replacement (standard for
-    large-scale multi-epoch training).
+    ``shards`` is a brace pattern (``"data/train-{000000..000099}.tar"``), a list, or
+    several sources joined by ``::`` — which is how one CLI string can MIX a local
+    dataset with one streamed straight from a remote host, e.g.::
+
+        "data/shards/msrvtt-{000000..000014}.tar::pipe:curl -s -L https://.../000000.tar"
+
+    Streaming a remote shard needs no local copy at all, which matters when the training
+    box has far less disk than the dataset. Set ``resampled=True`` for infinite sampling
+    with replacement (standard for large-scale multi-epoch training).
     """
     import webdataset as wds
+
+    if isinstance(shards, str) and "::" in shards:
+        shards = [s.strip() for s in shards.split("::") if s.strip()]
 
     ds = wds.WebDataset(
         shards,
