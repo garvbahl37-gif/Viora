@@ -192,3 +192,17 @@ def test_synthetic_dataset_feeds_dataloader_and_model():
     with torch.no_grad():
         out = model(batch.video, temporal_mask=tok_mask, timestamps=batch.timestamps)
     assert out.resampled_tokens.shape[0] == 2
+
+
+def test_collator_recognizes_single_caption_aliases():
+    """PE-Video (and similar HF video datasets) name the caption field
+    `human_caption`/`model_caption`, not `caption`. Without these aliases the
+    collator silently renders an empty '<video>\\n' target and training learns
+    nothing. Human-verified captions win over machine-generated ones."""
+    fmt = VideoTextCollator()._format_text
+    assert fmt({"human_caption": "a woman blows out candles"}) == "<video>\na woman blows out candles"
+    assert fmt({"model_caption": "a machine guess"}) == "<video>\na machine guess"
+    # both present -> prefer the human one
+    assert fmt({"human_caption": "human", "model_caption": "machine"}) == "<video>\nhuman"
+    # explicit `caption` still wins over both
+    assert fmt({"caption": "explicit", "human_caption": "human"}) == "<video>\nexplicit"

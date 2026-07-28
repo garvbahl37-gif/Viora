@@ -112,6 +112,12 @@ class VideoTextCollator:
             return f"<video>\nQuestion: {qq}\nAnswer: {aa}"
         if caps:
             return f"<video>\n{random.choice(caps)}"  # sample one per view (augmentation)
-        if it.get("caption"):
-            return f"<video>\n{it['caption']}"
+        # Single-caption datasets, in preference order. PE-Video ships BOTH a
+        # human-verified `human_caption` and a machine-generated `model_caption`;
+        # prefer the human one. Without these aliases such a dataset silently
+        # trains on an empty "<video>\n" target.
+        for key in ("caption", "human_caption", "model_caption", "text"):
+            val = it.get(key)
+            if val:
+                return f"<video>\n{val}"
         return "<video>\n"
